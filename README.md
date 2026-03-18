@@ -10,7 +10,7 @@ Jupyter kernel proxy that generates agent-friendly execution records from ipynb.
 - Unexecuted/empty cells: preserved in layout, marked as editable
 - Output: `.py` (for agents) + `.json` (for programs)
 - Execution timeline in JSON
-- **CLI**: get-output, write-cell, create-cell, delete-cell, list-cells, execute, record
+- **CLI**: get-output, write-cell, create-cell, delete-cell, list-cells, execute, record, cleanup-kernels, serve
 - **MCP Server**: Cursor integration for agent tools
 - **IDE refresh**: Auto-request Cursor/VS Code to refresh notebook when modified via CLI or MCP
 
@@ -34,7 +34,7 @@ jupyter kernelspec install kernels/jupylink
 
 ```bash
 # Get output for a cell (optionally by execution_count)
-jupylink get-output notebook.ipynb cell_id [--execution-count N]
+jupylink get-output notebook.ipynb cell_id [-e N]
 
 # Write content to a cell
 jupylink write-cell notebook.ipynb cell_id "content"
@@ -48,25 +48,28 @@ jupylink delete-cell notebook.ipynb cell_id
 # List all cells
 jupylink list-cells notebook.ipynb
 
-# Execute a cell
-jupylink execute notebook.ipynb cell_id
+# Execute cell(s) — multiple cells run in same kernel
+jupylink execute notebook.ipynb cell_id [cell_id ...]
 
 # Sync record: merge ipynb with existing execution data (preserves history)
 jupylink record notebook.ipynb
 
+# Cleanup stale kernel registry entries
+jupylink cleanup-kernels
+
+# Start MCP server (Cursor auto-starts when configured; manual: -p PORT, -n notebook)
+jupylink serve [-p PORT] [-n notebook.ipynb]
+
 # Disable IDE refresh (e.g. in scripts)
 jupylink write-cell notebook.ipynb cell_id "content" --no-refresh
 # Or: JUPYLINK_NO_REFRESH=1 jupylink write-cell ...
-
-# Start MCP server for Cursor
-jupylink serve
 ```
 
 ### Cursor Integration (MCP)
 
 **正确工作流程**：
 
-1. **先启动** `jupylink serve`（在打开 ipynb 之前）
+1. 配置 MCP 后，Cursor 会在调用工具时**自动启动** MCP 进程；也可在终端手动运行 `jupylink serve` 保持常驻
 2. 在 Cursor 中打开 ipynb
 3. 为 notebook 选择 **JupyLink** kernel
 4. （如 IDE 未自动传入路径）在首个 cell 运行 `%notebook_path ./当前notebook.ipynb`，以注册 kernel 供 CLI 连接
@@ -89,7 +92,9 @@ jupylink serve
 }
 ```
 
-配置后 Cursor 会在需要时自动启动 MCP 进程；也可在终端手动运行 `jupylink serve` 保持常驻。
+- **Windows**（使用 venv 时）：`"command": ".venv\\Scripts\\jupylink.exe"`
+- **Linux/macOS**：`"command": ".venv/bin/jupylink"` 或 `"command": "jupylink"`（若已 pip 安装）
+- **默认 notebook**：添加 `args: ["serve", "-n", "test.ipynb"]` 或设置 `JUPYLINK_DEFAULT_NOTEBOOK` 环境变量，则工具可省略 `notebook_path` 参数
 
 **MCP 暴露的工具**：
 
@@ -97,9 +102,12 @@ jupylink serve
 - `jupylink_write_cell` — 向 cell 写入内容
 - `jupylink_create_cell` — 创建新 cell
 - `jupylink_delete_cell` — 删除 cell
-- `jupylink_execute_cell` — 执行 cell
+- `jupylink_execute_cell` — 执行单个 cell
+- `jupylink_execute_cells` — 批量执行多个 cell（同一 kernel，适用于有依赖的 cell）
 - `jupylink_list_cells` — 列出所有 cells
 - `jupylink_get_record` — 获取 agent 适用的 .py 记录内容
+- `jupylink_sync_record` — 同步 record（合并 ipynb 与执行历史，对应 CLI 的 `record`）
+- `jupylink_get_status` — 轻量状态摘要（只读，无副作用）
 
 ## Record Format
 
