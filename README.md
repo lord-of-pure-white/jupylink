@@ -67,19 +67,19 @@ jupylink write-cell notebook.ipynb cell_id "content" --no-refresh
 
 ### Cursor Integration (MCP)
 
-**正确工作流程**：
+**Workflow**:
 
-1. 配置 MCP 后，Cursor 会在调用工具时**自动启动** MCP 进程；也可在终端手动运行 `jupylink serve` 保持常驻
-2. 在 Cursor 中打开 ipynb
-3. 为 notebook 选择 **JupyLink** kernel
-4. （如 IDE 未自动传入路径）在首个 cell 运行 `%notebook_path ./当前notebook.ipynb`，以注册 kernel 供 CLI 连接
-5. 选择 JupyLink 后，**记录功能自动开启**；CLI/MCP 会**连接到同一 kernel**（执行时共享变量状态）
+1. With MCP configured, Cursor **auto-starts** the MCP process when tools are invoked; you can also run `jupylink serve` manually in a terminal to keep it running
+2. Open ipynb in Cursor
+3. Select **JupyLink** kernel for the notebook
+4. (If IDE doesn't auto-pass path) Run `%notebook_path ./current_notebook.ipynb` in the first cell to register kernel for CLI connection
+5. After selecting JupyLink, **recording is auto-enabled**; CLI/MCP **connects to the same kernel** (shared variable state during execution)
 
-**%notebook_path vs jupylink record**：
-- `%notebook_path`：在 kernel 内设置路径，用于记录 + CLI 连接；需在 notebook 中运行
-- `jupylink record`：从 CLI 同步 record，合并 ipynb 与已有执行数据；不会覆盖执行历史
+**%notebook_path vs jupylink record**:
+- `%notebook_path`: Sets path in kernel for recording + CLI connection; must run in notebook
+- `jupylink record`: Syncs record from CLI, merges ipynb with existing execution data; does not overwrite execution history
 
-配置 `~/.cursor/mcp.json` 或 `.cursor/mcp.json`：
+Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 
 ```json
 {
@@ -92,22 +92,22 @@ jupylink write-cell notebook.ipynb cell_id "content" --no-refresh
 }
 ```
 
-- **Windows**（使用 venv 时）：`"command": ".venv\\Scripts\\jupylink.exe"`
-- **Linux/macOS**：`"command": ".venv/bin/jupylink"` 或 `"command": "jupylink"`（若已 pip 安装）
-- **默认 notebook**：添加 `args: ["serve", "-n", "test.ipynb"]` 或设置 `JUPYLINK_DEFAULT_NOTEBOOK` 环境变量，则工具可省略 `notebook_path` 参数
+- **Windows** (with venv): `"command": ".venv\\Scripts\\jupylink.exe"`
+- **Linux/macOS**: `"command": ".venv/bin/jupylink"` or `"command": "jupylink"` (if installed via pip)
+- **Default notebook**: Add `args: ["serve", "-n", "test.ipynb"]` or set `JUPYLINK_DEFAULT_NOTEBOOK` env var so tools can omit the `notebook_path` argument
 
-**MCP 暴露的工具**：
+**MCP tools**:
 
-- `jupylink_get_output` — 按 cell_id 和 execution_count 获取 output
-- `jupylink_write_cell` — 向 cell 写入内容
-- `jupylink_create_cell` — 创建新 cell
-- `jupylink_delete_cell` — 删除 cell
-- `jupylink_execute_cell` — 执行单个 cell
-- `jupylink_execute_cells` — 批量执行多个 cell（同一 kernel，适用于有依赖的 cell）
-- `jupylink_list_cells` — 列出所有 cells
-- `jupylink_get_record` — 获取 agent 适用的 .py 记录内容
-- `jupylink_sync_record` — 同步 record（合并 ipynb 与执行历史，对应 CLI 的 `record`）
-- `jupylink_get_status` — 轻量状态摘要（只读，无副作用）
+- `jupylink_get_output` — Get output by cell_id and execution_count
+- `jupylink_write_cell` — Write content to cell
+- `jupylink_create_cell` — Create new cell
+- `jupylink_delete_cell` — Delete cell
+- `jupylink_execute_cell` — Execute single cell
+- `jupylink_execute_cells` — Execute multiple cells (same kernel, for dependent cells)
+- `jupylink_list_cells` — List all cells
+- `jupylink_get_record` — Get agent-friendly .py record content
+- `jupylink_sync_record` — Sync record (merge ipynb with execution history; same as CLI `record`)
+- `jupylink_get_status` — Lightweight status summary (read-only, no side effects)
 
 ## Record Format
 
