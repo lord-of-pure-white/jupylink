@@ -1,0 +1,224 @@
+---
+name: jupylink
+description: >-
+  Operates Jupyter notebooks via JupyLink: CLI, MCP tools, and kernel. Use when
+  editing .ipynb files, executing cells, getting outputs, creating/writing/deleting
+  cells, syncing records, or integrating with Cursor for notebook workflows.
+---
+
+# JupyLink Usage
+
+JupyLink provides three usage modes: **CLI**, **MCP** (Cursor tools), and **Kernel** (Jupyter/VS Code). All operate on `.ipynb` files and produce `{stem}_record.py` + `{stem}_record.json`.
+
+## Agent Workflow — IMPORTANT
+
+**All notebook operations MUST use `jupylink_*` MCP tools. Do NOT use `EditNotebook` or directly edit `.ipynb` JSON.** JupyLink manages cell ids, execution state, and IDE refresh — bypassing it causes state corruption.
+
+### Understanding Notebook State
+
+The `{stem}_record.py` file is the agent's primary view of the notebook. **Always read it first** before making any changes. It contains every cell with clear status markers:
+
+```python
+# %% abc123  # exec_order: 1
+# [executed - do not modify]
+x = 42
+
+# %% [markdown] def456
+# [markdown - editable]
+# ## Data Processing
+# Load and clean the dataset
+
+# %% ghi789
+# [pending - editable]
+print(x)
+
+# %% jkl012
+# [empty - editable]
+
+```
+
+**Status markers and what they mean for the agent:**
+
+| Marker | Meaning | Agent Action |
+|--------|---------|-------------|
+| `[executed - do not modify]` | Cell has been run; variables are in kernel memory | Do NOT edit — changing it would desync code from kernel state |
+| `[error - do not modify]` | Cell ran but raised an exception | Read the error comment below it; fix in a new or pending cell |
+| `[pending - editable]` | Cell exists but hasn't been executed | Safe to edit via `jupylink_write_cell`, then execute |
+| `[empty - editable]` | Empty cell placeholder | Safe to write code into via `jupylink_write_cell` |
+| `[markdown - editable]` | Markdown cell (shown as `# ` prefixed lines) | Provides context about notebook structure and intent |
+
+**The `exec_order: N` tag** shows the global execution sequence. Use this to understand variable dependencies — cell with exec_order 3 can reference variables from exec_order 1 and 2.
+
+### Locating Cells for Operations
+
+Every MCP tool operates on **cell_id** (the hex string after `# %%`). To find the right cell:
+
+1. **Read `_record.py`** — scan for the code you want to modify; the cell_id is on the `# %%` line
+2. **Or call `jupylink_list_cells()`** — returns all cells with id, type, source preview, and index
+3. **Or call `jupylink_get_status()`** — lightweight status summary without side effects
+
+**Important**: cell_ids in `_record.py` may be long VS Code URIs (like `vscode-notebook-cell:/...#W0s...`). Use the full string as-is when calling MCP tools — do not truncate it.
+
+### Typical Workflows
+
+**1. Understand the notebook before acting:**
+```
+jupylink_get_record()  or  Read {stem}_record.py
+→ Understand what's executed, what's pending, what the structure is
+```
+
+**2. Edit and run an existing pending cell:**
+```
+jupylink_write_cell(cell_id="abc123", content="new code here")
+jupylink_execute_cell(cell_id="abc123")
+→ Check returned output for errors
+```
+
+**3. Write code into an empty cell:**
+```
+Find an [empty - editable] cell in _record.py → get its cell_id
+jupylink_write_cell(cell_id="<empty_cell_id>", content="my_code()")
+jupylink_execute_cell(cell_id="<empty_cell_id>")
+```
+
+**4. Create a new cell and execute it:**
+```
+jupylink_create_cell(source="import pandas as pd", index=2)
+→ Returns {"cell_id": "new_id"}
+jupylink_execute_cell(cell_id="new_id")
+```
+
+**5. Run multiple dependent cells together:**
+```
+jupylink_execute_cells(cell_ids=["cell_def", "cell_call"])
+→ Guarantees same kernel; cell_call can use variables from cell_def
+```
+
+**6. Fix a failed cell:**
+```
+Read error from _record.py or jupylink_get_output(cell_id="err_cell")
+jupylink_write_cell(cell_id="err_cell", content="fixed_code()")
+jupylink_execute_cell(cell_id="err_cell")
+```
+
+**7. Check execution output after the fact:**
+```
+jupylink_get_output(cell_id="abc123")                    → latest output
+jupylink_get_output(cell_id="abc123", execution_count=3) → specific execution
+```
+
+**8. Refresh record after external edits (user ran cells manually):**
+```
+jupylink_sync_record()
+→ Re-merges ipynb with execution history; then re-read _record.py
+```
+
+### Key Rules
+
+1. **Read `_record.py` first** — always understand current state before acting
+2. **Never modify `[executed]` cells** — they represent committed kernel state
+3. **Use `execute_cells` for dependencies** — single call with multiple cell_ids ensures same kernel
+4. **Prefer empty cells** for new code — look for `[empty - editable]` slots before creating new cells
+5. **Use `create_cell(index=N)` for insertion** — 0-based; inserts before position N; omit to append
+6. **Check output after execution** — `execute_cell` returns output directly; use `get_output` for historical data
+7. **Sync when stale** — if user ran cells manually in the notebook UI, call `jupylink_sync_record()` to update
+
+---
+
+## Setup
+
+```bash
+pip install -e .
+jupyter kernelspec install kernels/jupylink
+```
+
+## 1. CLI
+
+Entry: `jupylink <command> <notebook> [args]`
+
+| Command | Args | Options | Output |
+|---------|------|---------|--------|
+| `get-output` | notebook, cell_id | `-e N` (execution_count) | JSON output |
+| `write-cell` | notebook, cell_id, content | `--no-refresh` | OK |
+| `create-cell` | notebook | `-a INDEX`, `-t code\|markdown\|raw`, `-s "..."`, `--no-refresh` | new cell_id |
+| `delete-cell` | notebook, cell_id | `--no-refresh` | OK |
+| `list-cells` | notebook | — | cell list |
+| `execute` | notebook, cell_id [cell_id ...] | `--no-refresh` | JSON result(s); multiple cells = same kernel |
+| `record` | notebook | — | sync message |
+| `cleanup-kernels` | — | — | removed count |
+| `serve` | — | `-p PORT`, `-n notebook` | MCP server |
+
+**Create-cell index**: 0-based; omit to append. `index=N` inserts before cell N. Clamped to [0, len(cells)].
+
+**Disable IDE refresh**: `--no-refresh` or `JUPYLINK_NO_REFRESH=1`.
+
+## 2. MCP (Cursor)
+
+Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "jupylink": {
+      "command": "path/to/jupylink",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+- **Windows**: `"command": ".venv\\Scripts\\jupylink.exe"`
+- **Linux/macOS**: `"command": ".venv/bin/jupylink"`
+
+**Default notebook (optional)**: Add `-n notebook.ipynb` to args or set `JUPYLINK_DEFAULT_NOTEBOOK` in env. When set, tools can omit `notebook_path` — agent can call `jupylink_list_cells()` without passing the path.
+
+**Project-level** `.cursor/mcp.json` can override with `args: ["serve", "-n", "test.ipynb"]` so the current project's notebook is automatic.
+
+**Tools**:
+
+| Tool | Args | Returns |
+|------|------|---------|
+| `jupylink_get_output` | notebook_path, cell_id, execution_count? | JSON output or `{"error":"..."}` |
+| `jupylink_write_cell` | notebook_path, cell_id, content | `{"status":"ok"}` or error |
+| `jupylink_create_cell` | notebook_path, cell_type?, index?, source? | `{"cell_id":"..."}` or error |
+| `jupylink_delete_cell` | notebook_path, cell_id | `{"status":"ok"}` or error |
+| `jupylink_execute_cell` | notebook_path, cell_id | JSON result or error |
+| `jupylink_execute_cells` | notebook_path, cell_ids | JSON list of results; use for dependent cells |
+| `jupylink_list_cells` | notebook_path | JSON cell list |
+| `jupylink_get_record` | notebook_path | .py record content (read-only if file exists) |
+| `jupylink_sync_record` | notebook_path | Re-merges ipynb with history, rewrites record files |
+| `jupylink_get_status` | notebook_path | Lightweight JSON summary of cell statuses (read-only) |
+
+## 3. Kernel (Jupyter Lab / VS Code)
+
+1. Open notebook → select **JupyLink** kernel
+2. (Optional) First cell: `%notebook_path ./notebook.ipynb` — sets path for recording + CLI connection
+3. Run cells normally → `{stem}_record.py` and `{stem}_record.json` are written
+
+**Path resolution**: `%notebook_path` > env vars > **auto from execute_request** (VS Code/Cursor extracts path from cellId on first run; no magic needed).
+
+## Execution Flow
+
+- **CLI `execute`** / **MCP `jupylink_execute_cell`**: Tries to connect to existing JupyLink kernel; if none, spawns kernel and keeps it alive for reuse (`independent=True`).
+- **MCP `jupylink_execute_cells`** / **CLI `execute cell1 cell2 ...`**: Runs multiple cells in one call, guaranteeing kernel reuse. Use when cells depend on each other (e.g. def then call).
+- **Kernel registration**: When notebook uses JupyLink and path is set, kernel registers in `~/.jupylink/kernels.json`. CLI/MCP use this to connect.
+- **`jupylink record`** / **`jupylink_sync_record`**: Merges ipynb with existing `_record.json`; preserves execution history.
+
+## Record Format
+
+- **.py**: `# %% cell_id` blocks with status markers:
+  - `[executed - do not modify]` — ran successfully, kernel state depends on it
+  - `[error - do not modify]` — ran but failed, error details in comments below
+  - `[pending - editable]` — not yet executed, safe to modify
+  - `[empty - editable]` — empty cell, available for new code
+  - `[markdown - editable]` — markdown cell as `# %% [markdown] cell_id` with `# ` prefixed content
+- **.json**: `execution_log`, `cells` with `output`, `execution_count`, `status`, `cell_type`
+
+## Configuration
+
+- `JUPYLINK_EXEC_TIMEOUT`: Execution timeout in seconds (default: 60). Set higher for long-running cells.
+- `JUPYLINK_NO_REFRESH`: Set to `1` to disable IDE refresh notifications.
+
+## IDE Refresh
+
+After write-cell, create-cell, delete-cell, or execute, JupyLink requests IDE refresh via `cursor`/`code -r`. Requires `cursor` or `code` in PATH. Disable with `--no-refresh` or `JUPYLINK_NO_REFRESH=1`.

@@ -1,0 +1,12 @@
+{
+  "notebook_path": "E:\\projects\\jupytest\\test_notebook.ipynb",
+  "execution_log": [],
+  "cells": [
+    {
+      "id": "82ba0a8e",
+      "code": "print(\"hello\")",
+      "status": "pending",
+      "editable": true
+    }
+  ]
+}

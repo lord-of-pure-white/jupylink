@@ -1,0 +1,351 @@
+{
+  "notebook_path": "E:\\projects\\jupytest\\test.ipynb",
+  "execution_log": [
+    {
+      "cell_id": "2998fb2d",
+      "status": "ok"
+    },
+    {
+      "cell_id": "b4f94c95",
+      "status": "ok"
+    },
+    {
+      "cell_id": "43606d83",
+      "status": "ok"
+    },
+    {
+      "cell_id": "a7c124a8-9527-4354-bed2-41725310e72c",
+      "status": "ok"
+    },
+    {
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "9e84e836-d312-4644-8dda-5bf8c951b032",
+      "status": "ok"
+    },
+    {
+      "cell_id": "b7919a92-a9e4-4dff-926e-f457ebb9cfbf",
+      "status": "ok"
+    },
+    {
+      "cell_id": "2998fb2d",
+      "status": "ok"
+    },
+    {
+      "cell_id": "b4f94c95",
+      "status": "ok"
+    },
+    {
+      "cell_id": "43606d83",
+      "status": "ok"
+    },
+    {
+      "cell_id": "a7c124a8-9527-4354-bed2-41725310e72c",
+      "status": "ok"
+    },
+    {
+      "cell_id": "38454632-9b40-4dab-9e25-b18be8ff0b4c",
+      "status": "ok"
+    },
+    {
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "9e84e836-d312-4644-8dda-5bf8c951b032",
+      "status": "ok"
+    }
+  ],
+  "cells": [
+    {
+      "id": "2998fb2d",
+      "cell_id": "2998fb2d",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "exec_order": 1,
+      "execution_count": 1
+    },
+    {
+      "id": "b4f94c95",
+      "cell_id": "b4f94c95",
+      "code": "def prime_factors(n):\n    \"\"\"分解质因数\"\"\"\n    factors = []\n    d = 2\n    while d * d <= n:\n        while n % d == 0:\n            factors.append(d)\n            n //= d\n        d += 1\n    if n > 1:\n        factors.append(n)\n    return factors",
+      "status": "ok",
+      "editable": false,
+      "exec_order": 2,
+      "execution_count": 2
+    },
+    {
+      "id": "43606d83",
+      "cell_id": "43606d83",
+      "code": "print(f\"{x} = {' × '.join(map(str, prime_factors(x)))}\")",
+      "status": "ok",
+      "editable": false,
+      "exec_order": 3,
+      "execution_count": 3
+    },
+    {
+      "id": "a7c124a8-9527-4354-bed2-41725310e72c",
+      "cell_id": "a7c124a8-9527-4354-bed2-41725310e72c",
+      "code": "a = 1",
+      "status": "ok",
+      "editable": false,
+      "exec_order": 4,
+      "execution_count": 4
+    },
+    {
+      "id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "code": "a+= 15",
+      "status": "ok",
+      "editable": false,
+      "exec_order": 5,
+      "execution_count": 10
+    },
+    {
+      "id": "9e84e836-d312-4644-8dda-5bf8c951b032",
+      "cell_id": "9e84e836-d312-4644-8dda-5bf8c951b032",
+      "code": "print(a)",
+      "status": "ok",
+      "editable": false,
+      "exec_order": 6,
+      "execution_count": 11
+    },
+    {
+      "id": "b7919a92-a9e4-4dff-926e-f457ebb9cfbf",
+      "cell_id": "b7919a92-a9e4-4dff-926e-f457ebb9cfbf",
+      "code": "print('hello from CLI')",
+      "status": "ok",
+      "editable": false,
+      "exec_order": 7,
+      "execution_count": 12
+    },
+    {
+      "id": "2998fb2d",
+      "cell_id": "2998fb2d",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 1,
+      "exec_order": 8
+    },
+    {
+      "id": "b4f94c95",
+      "cell_id": "b4f94c95",
+      "code": "def prime_factors(n):\n    \"\"\"分解质因数\"\"\"\n    factors = []\n    d = 2\n    while d * d <= n:\n        while n % d == 0:\n            factors.append(d)\n            n //= d\n        d += 1\n    if n > 1:\n        factors.append(n)\n    return factors",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 2,
+      "exec_order": 9
+    },
+    {
+      "id": "43606d83",
+      "cell_id": "43606d83",
+      "code": "print(f\"{x} = {' × '.join(map(str, prime_factors(x)))}\")",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 3,
+      "exec_order": 10
+    },
+    {
+      "id": "a7c124a8-9527-4354-bed2-41725310e72c",
+      "cell_id": "a7c124a8-9527-4354-bed2-41725310e72c",
+      "code": "a = 1",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 4,
+      "exec_order": 11
+    },
+    {
+      "id": "38454632-9b40-4dab-9e25-b18be8ff0b4c",
+      "cell_id": "38454632-9b40-4dab-9e25-b18be8ff0b4c",
+      "code": "with open('1.txt', 'r') as f:\n    print(f.read())",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 5,
+      "exec_order": 12
+    },
+    {
+      "id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "code": "a+= 15",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 6,
+      "exec_order": 13
+    },
+    {
+      "id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "code": "a+= 15",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 7,
+      "exec_order": 14
+    },
+    {
+      "id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "code": "a+= 15",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 8,
+      "exec_order": 15
+    },
+    {
+      "id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "code": "a+= 15",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 9,
+      "exec_order": 16
+    },
+    {
+      "id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "code": "a+= 15",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 10,
+      "exec_order": 17
+    },
+    {
+      "id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "code": "a+= 15",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 11,
+      "exec_order": 18
+    },
+    {
+      "id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "cell_id": "252bbbe2-27c1-477a-bae8-52c672a1d68b",
+      "code": "a+= 15",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 12,
+      "exec_order": 19
+    },
+    {
+      "id": "9e84e836-d312-4644-8dda-5bf8c951b032",
+      "cell_id": "9e84e836-d312-4644-8dda-5bf8c951b032",
+      "code": "print(a)",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 13,
+      "exec_order": 20
+    },
+    {
+      "id": "54df125d",
+      "code": "!jupyter kernelspec list",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "77e8d4d2",
+      "code": "print(\"MCP 执行测试\")",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "36ccd814-19f5-4731-96bc-1f0b737affab",
+      "code": "# 这里做一些测试",
+      "cell_type": "markdown",
+      "status": "markdown",
+      "editable": true
+    },
+    {
+      "id": "ebdc345e-48cb-4580-81d3-d86587d65dfc",
+      "code": "b = 2",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "667edb6f-7b90-4361-8e0a-2921fd6e80f6",
+      "code": "print(123)",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "43a4e11a-613b-4873-b646-1c481403ab69",
+      "code": "## 报错测试",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "151c7beb-a6c0-486b-92d8-4e410b62b498",
+      "code": "1/0",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "0b2d95e3-a2f7-441a-9f82-ebb38ff2898a",
+      "code": "for i in range(5):\n    a += 1",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "582d2cde-47e5-4004-8466-7f4d7bfac950",
+      "code": "",
+      "cell_type": "code",
+      "status": "empty",
+      "editable": true
+    },
+    {
+      "id": "e1681b17-64a1-438e-a417-6ec06ad72f4f",
+      "code": "a = 0\nb = 0",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "ccf4e1f8",
+      "code": "",
+      "cell_type": "code",
+      "status": "empty",
+      "editable": true
+    },
+    {
+      "id": "0020b498",
+      "code": "",
+      "cell_type": "code",
+      "status": "empty",
+      "editable": true
+    }
+  ]
+}
