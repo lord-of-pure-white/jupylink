@@ -223,6 +223,7 @@ class TestRequestRefreshPosix:
         monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
         monkeypatch.setattr("jupylink.notify_ide._is_temp_path", lambda _: False)
         monkeypatch.setenv("JUPYLINK_NO_REFRESH", "0")
+        monkeypatch.setenv("JUPYLINK_REFRESH_USE_URL", "1")
         monkeypatch.delenv("JUPYLINK_REFRESH_SKIP_REMOTE", raising=False)
         monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 12345 5.6.7.8 22")
         opened_uris: list[str] = []
@@ -250,6 +251,7 @@ class TestRequestRefreshPosix:
         monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
         monkeypatch.setattr("jupylink.notify_ide._is_temp_path", lambda _: False)
         monkeypatch.setenv("JUPYLINK_NO_REFRESH", "0")
+        monkeypatch.setenv("JUPYLINK_REFRESH_USE_URL", "1")
         monkeypatch.delenv("JUPYLINK_REFRESH_SKIP_REMOTE", raising=False)
         monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 12345 5.6.7.8 22")
         monkeypatch.setenv("JUPYLINK_REMOTE_SSH_HOST", "my-server.example.com")
@@ -271,6 +273,7 @@ class TestRequestRefreshPosix:
         monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
         monkeypatch.setattr("jupylink.notify_ide._is_temp_path", lambda _: False)
         monkeypatch.setenv("JUPYLINK_NO_REFRESH", "0")
+        monkeypatch.setenv("JUPYLINK_REFRESH_USE_URL", "1")
         monkeypatch.delenv("JUPYLINK_REFRESH_SKIP_REMOTE", raising=False)
         monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 12345 5.6.7.8 22")
         monkeypatch.setenv("JUPYLINK_REFRESH_USE_VSCODE", "1")

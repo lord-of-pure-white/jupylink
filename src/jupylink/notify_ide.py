@@ -169,7 +169,7 @@ def _path_to_vscode_remote_uri(path: Path, host: str) -> str:
 
 def _run_refresh(path: Path, cmd: str | None = None, remote_host: str | None = None) -> None:
     """Invoke IDE CLI and/or URL scheme to focus/reload the file. Called after debounce delay."""
-    use_url = os.environ.get("JUPYLINK_REFRESH_USE_URL", "1").lower() not in ("0", "false", "no")
+    use_url = os.environ.get("JUPYLINK_REFRESH_USE_URL", "0").lower() not in ("0", "false", "no")
 
     if remote_host:
         # Remote SSH: use vscode-remote URI. With X11 forwarding, webbrowser.open may reach client.
