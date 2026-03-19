@@ -8,11 +8,31 @@ description: >-
 
 # JupyLink Usage
 
-JupyLink provides three usage modes: **CLI**, **MCP** (Cursor tools), and **Kernel** (Jupyter/VS Code). All operate on `.ipynb` files and produce `{stem}_record.py` + `{stem}_record.json`.
+JupyLink provides three usage modes: **CLI**, **MCP** (Cursor tools), and **Kernel** (Jupyter/VS Code). All operate on `.ipynb` files and produce `{stem}_record.py`, `{stem}_record.json`, and `{stem}_record.csv`.
 
 ## Agent Workflow — IMPORTANT
 
 **All notebook operations MUST use `jupylink_*` MCP tools. Do NOT use `EditNotebook` or directly edit `.ipynb` JSON.** JupyLink manages cell ids, execution state, and IDE refresh — bypassing it causes state corruption.
+
+### Inspecting Notebook State (Read Flow)
+
+When viewing Jupyter notebook state, follow this flow:
+
+1. **Get ipynb structure** — `jupylink_list_cells(notebook_path)` → cells with id, type, source preview, index
+2. **Get execution status** — Use MCP resources or tools:
+   - `fetch_mcp_resource(jupylink://record/json)` or `jupylink_get_record()` — structured execution_log, cells with actual executed Python code (including try/except-wrapped error cells)
+   - `fetch_mcp_resource(jupylink://record/csv)` — flattened view
+   - `jupylink_get_status()` — lightweight summary
+3. **Extract cell_ids** — From record JSON/CSV or list_cells; needed for output lookup
+4. **Get cell output** — `jupylink_get_output(cell_id="...")` for a specific cell's stdout, execute_result, or error
+
+### Code Placement (Write Flow) — MANDATORY
+
+**All code written into ipynb MUST go through JupyLink MCP tools.** Never use EditNotebook or direct ipynb JSON edits.
+
+- **Write to existing cell**: `jupylink_write_cell(cell_id="...", content="...")`
+- **Create new cell**: `jupylink_create_cell(source="...", index=N, cell_type="code")`
+- **Delete cell**: `jupylink_delete_cell(cell_id="...")`
 
 ### Understanding Notebook State
 
@@ -115,13 +135,14 @@ jupylink_sync_record()
 
 ### Key Rules
 
-1. **Read `_record.py` first** — always understand current state before acting
-2. **Never modify `[executed]` cells** — they represent committed kernel state
-3. **Use `execute_cells` for dependencies** — single call with multiple cell_ids ensures same kernel
-4. **Prefer empty cells** for new code — look for `[empty - editable]` slots before creating new cells
-5. **Use `create_cell(index=N)` for insertion** — 0-based; inserts before position N; omit to append
-6. **Check output after execution** — `execute_cell` returns output directly; use `get_output` for historical data
-7. **Sync when stale** — if user ran cells manually in the notebook UI, call `jupylink_sync_record()` to update
+1. **ipynb writes are MANDATORY via MCP** — use `jupylink_write_cell`, `jupylink_create_cell`, `jupylink_delete_cell`; never EditNotebook or direct ipynb edit
+2. **Read `_record.py` first** — always understand current state before acting
+3. **Never modify `[executed]` cells** — they represent committed kernel state
+4. **Use `execute_cells` for dependencies** — single call with multiple cell_ids ensures same kernel
+5. **Prefer empty cells** for new code — look for `[empty - editable]` slots before creating new cells
+6. **Use `create_cell(index=N)` for insertion** — 0-based; inserts before position N; omit to append
+7. **Check output after execution** — `execute_cell` returns output directly; use `get_output` for historical data
+8. **Sync when stale** — if user ran cells manually in the notebook UI, call `jupylink_sync_record()` to update
 
 ---
 
@@ -189,11 +210,20 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 | `jupylink_sync_record` | notebook_path | Re-merges ipynb with history, rewrites record files |
 | `jupylink_get_status` | notebook_path | Lightweight JSON summary of cell statuses (read-only) |
 
+**MCP Resources** (when notebook is bound via `-n` or `JUPYLINK_DEFAULT_NOTEBOOK`):
+
+Use `list_mcp_resources` / `fetch_mcp_resource` to view record files:
+
+| URI | Name | Description |
+|-----|------|-------------|
+| `jupylink://record/json` | record_json | Structured JSON: execution_log, cells with output, status |
+| `jupylink://record/csv` | record_csv | Flattened CSV: id, cell_type, status, exec_order, code, errors |
+
 ## 3. Kernel (Jupyter Lab / VS Code)
 
 1. Open notebook → select **JupyLink** kernel
 2. (Optional) First cell: `%notebook_path ./notebook.ipynb` — sets path for recording + CLI connection
-3. Run cells normally → `{stem}_record.py` and `{stem}_record.json` are written
+3. Run cells normally → `{stem}_record.py`, `{stem}_record.json`, and `{stem}_record.csv` are written
 
 **Path resolution**: `%notebook_path` > env vars > **auto from execute_request** (VS Code/Cursor extracts path from cellId on first run; no magic needed).
 
@@ -202,7 +232,7 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 - **CLI `execute`** / **MCP `jupylink_execute_cell`**: Tries to connect to existing JupyLink kernel; if none, spawns kernel and keeps it alive for reuse (`independent=True`).
 - **MCP `jupylink_execute_cells`** / **CLI `execute cell1 cell2 ...`**: Runs multiple cells in one call, guaranteeing kernel reuse. Use when cells depend on each other (e.g. def then call).
 - **Kernel registration**: When notebook uses JupyLink and path is set, kernel registers in `~/.jupylink/kernels.json`. CLI/MCP use this to connect.
-- **`jupylink record`** / **`jupylink_sync_record`**: Merges ipynb with existing `_record.json`; preserves execution history.
+- **`jupylink record`** / **`jupylink_sync_record`**: Merges ipynb with existing `_record.json`; preserves execution history; writes `_record.py`, `_record.json`, `_record.csv`.
 
 ## Record Format
 
@@ -213,6 +243,7 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
   - `[empty - editable]` — empty cell, available for new code
   - `[markdown - editable]` — markdown cell as `# %% [markdown] cell_id` with `# ` prefixed content
 - **.json**: `execution_log`, `cells` with `output`, `execution_count`, `status`, `cell_type`
+- **.csv**: Flattened table: `id`, `cell_type`, `status`, `exec_order`, `execution_count`, `code`, `error_ename`, `error_evalue` — for spreadsheet/analysis
 
 ## Configuration
 

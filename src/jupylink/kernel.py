@@ -66,13 +66,15 @@ class JupyLinkKernel(IPythonKernel):
         self._setup_notebook_path()
 
     def _setup_notebook_path(self) -> None:
-        """Resolve notebook path from env vars, load existing history, and register for CLI."""
+        """Resolve notebook path from env vars and register for CLI.
+
+        Do NOT load execution history — after kernel restart the process has no
+        in-memory state. Reset record to all-pending so it reflects fresh kernel.
+        """
         path = os.environ.get("JUPYTER_NOTEBOOK_PATH") or os.environ.get("JPY_SESSION_NAME")
         if path and str(path).endswith(".ipynb"):
             self._record_manager.set_notebook_path(path)
-            loaded = self._record_manager.load_from_record_file()
-            if loaded:
-                logger.info("Loaded existing execution history for %s", path)
+            self._record_manager.write_record()  # reset: all cells pending (no prior execution)
             self._register_for_cli()
 
     def _try_set_notebook_from_request(self) -> None:
@@ -105,7 +107,7 @@ class JupyLinkKernel(IPythonKernel):
                         break
             if path and Path(path).suffix == ".ipynb":
                 self._record_manager.set_notebook_path(path)
-                self._record_manager.load_from_record_file()
+                self._record_manager.write_record()  # reset: all cells pending
                 self._register_for_cli()
                 logger.info("Notebook path resolved from request: %s", path)
         except Exception:

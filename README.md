@@ -8,7 +8,7 @@ Jupyter kernel proxy that generates agent-friendly execution records from ipynb.
 - Success cells: raw code
 - Error cells: code wrapped in `try/except` with error info as comments
 - Unexecuted/empty cells: preserved in layout, marked as editable
-- Output: `.py` (for agents) + `.json` (for programs)
+- Output: `.py` (for agents), `.json` (for programs), `.csv` (flattened table)
 - Execution timeline in JSON
 - **CLI**: get-output, write-cell, create-cell, delete-cell, list-cells, execute, record, cleanup-kernels, serve
 - **MCP Server**: Cursor integration for agent tools
@@ -28,7 +28,7 @@ jupyter kernelspec install kernels/jupylink
 1. Open a notebook in Jupyter Lab or VS Code
 2. Select the **JupyLink** kernel
 3. (Optional) In the first cell, run: `%notebook_path ./your_notebook.ipynb`
-4. Execute cells as usual — records are written to `{notebook_stem}_record.py` and `{notebook_stem}_record.json`
+4. Execute cells as usual — records are written to `{notebook_stem}_record.py`, `{notebook_stem}_record.json`, and `{notebook_stem}_record.csv`
 
 ### CLI
 
@@ -109,6 +109,10 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 - `jupylink_sync_record` — Sync record (merge ipynb with execution history; same as CLI `record`)
 - `jupylink_get_status` — Lightweight status summary (read-only, no side effects)
 
+**MCP Resources** (when notebook is bound): Use `list_mcp_resources` / `fetch_mcp_resource` to view `_record.json` and `_record.csv`:
+- `jupylink://record/json` — Structured JSON record
+- `jupylink://record/csv` — Flattened CSV record
+
 ## Record Format
 
 ### .py
@@ -135,7 +139,9 @@ except Exception as e:
 some_unexecuted_code()
 ```
 
-### .json
+### .json and .csv
+
+**JSON** (`{stem}_record.json`):
 
 ```json
 {
@@ -149,6 +155,8 @@ some_unexecuted_code()
   ]
 }
 ```
+
+**CSV** (`{stem}_record.csv`): Flattened table with columns `id`, `cell_type`, `status`, `exec_order`, `execution_count`, `code`, `error_ename`, `error_evalue`.
 
 ## IDE Refresh
 

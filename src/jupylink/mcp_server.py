@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 from pathlib import Path
@@ -13,6 +15,10 @@ from .ipynb_ops import create_cell, delete_cell, get_cell_source, list_cells, wr
 from .record_manager import RecordManager
 
 mcp = FastMCP("JupyLink", json_response=True)
+
+# URI scheme for record resources (when notebook is bound)
+JUPYLINK_RECORD_JSON_URI = "jupylink://record/json"
+JUPYLINK_RECORD_CSV_URI = "jupylink://record/csv"
 
 # Default notebook when started with --notebook or JUPYLINK_DEFAULT_NOTEBOOK env
 _bound_notebook: Path | None = None
@@ -192,6 +198,7 @@ def jupylink_sync_record(notebook_path: str | None = None) -> str:
     path = _resolve_notebook(notebook_path)
     rm = RecordManager(path)
     rm.load_from_record_file()
+    rm.merge_ipynb_execution_state()
     rm.write_record()
     stem = path.stem
     base = path.parent
@@ -244,6 +251,75 @@ def jupylink_get_status(notebook_path: str | None = None) -> str:
         entry["source_preview"] = code[:80] + "..." if len(code) > 80 else code
         summary.append(entry)
     return json.dumps(summary, ensure_ascii=False, indent=2)
+
+
+def _record_json_to_csv(data: dict) -> str:
+    """Convert record JSON payload to CSV string."""
+    cells = data.get("cells", [])
+    if not cells:
+        return "id,cell_type,status,exec_order,execution_count,code,error_ename,error_evalue\n"
+    fieldnames = ["id", "cell_type", "status", "exec_order", "execution_count", "code", "error_ename", "error_evalue"]
+    rows = []
+    for c in cells:
+        err = c.get("error_info") or {}
+        rows.append({
+            "id": c.get("id") or c.get("cell_id", ""),
+            "cell_type": c.get("cell_type", "code"),
+            "status": c.get("status", ""),
+            "exec_order": c.get("exec_order", ""),
+            "execution_count": c.get("execution_count", ""),
+            "code": (c.get("code") or "").replace("\r\n", "\n").replace("\n", " ")[:500],
+            "error_ename": err.get("ename", ""),
+            "error_evalue": err.get("evalue", ""),
+        })
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    return buf.getvalue()
+
+
+@mcp.resource(
+    JUPYLINK_RECORD_JSON_URI,
+    name="record_json",
+    title="Notebook Record (JSON)",
+    description="Structured execution record: execution_log, cells with output, status, exec_order.",
+    mime_type="application/json",
+)
+def _resource_record_json() -> str:
+    """MCP resource: read _record.json for the bound notebook."""
+    if not _bound_notebook:
+        return json.dumps({"error": "No notebook bound. Start with --notebook or JUPYLINK_DEFAULT_NOTEBOOK."})
+    path = _bound_notebook.resolve()
+    json_path = path.parent / f"{path.stem}_record.json"
+    if not json_path.exists():
+        return json.dumps({"error": f"Record not found: {json_path}"})
+    return json_path.read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    JUPYLINK_RECORD_CSV_URI,
+    name="record_csv",
+    title="Notebook Record (CSV)",
+    description="Flattened CSV view of cells: id, cell_type, status, exec_order, code, errors.",
+    mime_type="text/csv",
+)
+def _resource_record_csv() -> str:
+    """MCP resource: read _record.csv for the bound notebook (generates from JSON if needed)."""
+    if not _bound_notebook:
+        return "error,No notebook bound. Start with --notebook or JUPYLINK_DEFAULT_NOTEBOOK."
+    path = _bound_notebook.resolve()
+    csv_path = path.parent / f"{path.stem}_record.csv"
+    json_path = path.parent / f"{path.stem}_record.json"
+    if csv_path.exists():
+        return csv_path.read_text(encoding="utf-8")
+    if json_path.exists():
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            return _record_json_to_csv(data)
+        except Exception:
+            pass
+    return "error,Record not found"
 
 
 def run_mcp_server(port: int = 0, notebook_path: str | None = None) -> None:

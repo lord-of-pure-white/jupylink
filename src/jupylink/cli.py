@@ -125,6 +125,7 @@ def record(
     path = _resolve_notebook(notebook)
     rm = RecordManager(path)
     loaded = rm.load_from_record_file()
+    merged = rm.merge_ipynb_execution_state()
     rm.write_record()
     stem = path.stem
     base = path.parent

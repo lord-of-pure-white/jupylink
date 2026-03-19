@@ -1,0 +1,25 @@
+---
+description: ipynb 必须通过 JupyLink MCP 工具操作，禁止直接编辑
+globs: "**/*.ipynb"
+alwaysApply: false
+---
+
+# ipynb 操作强制规则
+
+**所有对 ipynb 的写入与修改必须通过 JupyLink MCP 工具完成，禁止使用 EditNotebook 或直接编辑 ipynb JSON。**
+
+## 必须使用
+
+- **写入代码到已有 cell**：`jupylink_write_cell(cell_id="...", content="...")`
+- **新建 cell**：`jupylink_create_cell(source="...", index=N, cell_type="code")`
+- **删除 cell**：`jupylink_delete_cell(cell_id="...")`
+
+## 禁止使用
+
+- `EditNotebook` 工具
+- 直接编辑 `.ipynb` 文件
+- 直接修改 ipynb 的 JSON 结构
+
+## 原因
+
+JupyLink 会维护 cell id、执行状态和 IDE 刷新；绕过这些工具会导致状态不一致、记录损坏。

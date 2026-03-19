@@ -1,7 +1,8 @@
-"""Record Manager: maintains execution record, merges with ipynb, writes .py and JSON."""
+"""Record Manager: maintains execution record, merges with ipynb, writes .py, JSON and CSV."""
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import re
@@ -110,6 +111,90 @@ class RecordManager:
                 rec["execution_count"] = c["execution_count"]
             self._execution_records.append(rec)
         return len(self._execution_records) > 0
+
+    def merge_ipynb_execution_state(self) -> int:
+        """Merge execution state from ipynb into record. Cells with outputs/execution_count
+        in ipynb but not in record are added. Returns number of cells merged.
+        Fixes desync when cells were run in UI but kernel didn't record (e.g. path not set).
+        """
+        if not self.notebook_path or not self.notebook_path.exists():
+            return 0
+        try:
+            nb = nbformat.read(self.notebook_path, as_version=nbformat.NO_CONVERT)
+        except Exception:
+            return 0
+        recorded_ids = {r.get("cell_id") or r.get("id") for r in self._execution_records}
+        merged = 0
+        for cell in nb.cells:
+            if cell.get("cell_type") != "code":
+                continue
+            cell_id = cell.get("id")
+            if not cell_id or cell_id in recorded_ids:
+                continue
+            outputs = cell.get("outputs", [])
+            exec_count = cell.get("execution_count")
+            if not outputs and exec_count is None:
+                continue
+            source = cell.get("source", "")
+            if isinstance(source, list):
+                source = "".join(source)
+            if _is_empty_code(source) or _is_ide_injected_code(source, cell_id):
+                continue
+            status = "error" if any(o.get("output_type") == "error" for o in outputs) else "ok"
+            error_info = None
+            output_list = None
+            if outputs:
+                output_list = []
+                for o in outputs:
+                    if o.get("output_type") == "stream":
+                        output_list.append({
+                            "msg_type": "stream",
+                            "name": o.get("name", "stdout"),
+                            "text": "".join(o.get("text", [])),
+                        })
+                    elif o.get("output_type") == "error":
+                        output_list.append({
+                            "msg_type": "error",
+                            "ename": o.get("ename", ""),
+                            "evalue": o.get("evalue", ""),
+                            "traceback": o.get("traceback", []),
+                        })
+                    elif o.get("output_type") in ("execute_result", "display_data"):
+                        output_list.append({
+                            "msg_type": o["output_type"],
+                            "data": o.get("data", {}),
+                            "metadata": o.get("metadata", {}),
+                        })
+            if status == "error" and output_list:
+                for o in output_list:
+                    if o.get("msg_type") == "error":
+                        error_info = {
+                            "ename": o.get("ename", ""),
+                            "evalue": o.get("evalue", ""),
+                            "traceback": o.get("traceback", []),
+                        }
+                        break
+            rec = {
+                "id": cell_id,
+                "cell_id": cell_id,
+                "code": source,
+                "status": status,
+                "editable": False,
+                "exec_order": len(self._execution_records) + 1,
+            }
+            if error_info:
+                rec["error_info"] = error_info
+                rec["original_code"] = source
+                rec["code"] = _wrap_error_code(source)
+            if output_list:
+                rec["output"] = output_list
+            if exec_count is not None:
+                rec["execution_count"] = exec_count
+            self._execution_records.append(rec)
+            self._execution_log.append({"cell_id": cell_id, "status": status})
+            recorded_ids.add(cell_id)
+            merged += 1
+        return merged
 
     def add_execution(
         self,
@@ -272,11 +357,15 @@ class RecordManager:
         Markdown cells are always included inline at their notebook position.
         """
         ipynb_cells = self._get_ipynb_cells()
-        nb_id_by_code: dict[str, str] = {
-            _normalize_code_for_match(c.get("code", "")): c["id"]
-            for c in ipynb_cells
-            if c.get("cell_type") == "code" and c.get("id")
-        }
+        nb_cell_ids = {c["id"] for c in ipynb_cells if c.get("id")}
+        # code -> nbformat id; for duplicate code, first occurrence wins (stable order)
+        nb_id_by_code: dict[str, str] = {}
+        for c in ipynb_cells:
+            if c.get("cell_type") != "code" or not c.get("id"):
+                continue
+            norm = _normalize_code_for_match(c.get("code", ""))
+            if norm not in nb_id_by_code:
+                nb_id_by_code[norm] = c["id"]
 
         executed_blocks: list[dict[str, Any]] = []
         for r in self._execution_records:
@@ -286,18 +375,16 @@ class RecordManager:
             if _is_ide_injected_code(raw_code, r.get("cell_id")):
                 continue
             block = r.copy()
-            # Normalize cell_id: use nbformat id when code matches (fixes VS Code vs nbformat mismatch)
-            norm = _normalize_code_for_match(raw_code)
-            if norm in nb_id_by_code:
-                block["id"] = nb_id_by_code[norm]
-                block["cell_id"] = nb_id_by_code[norm]
+            rec_id = r.get("cell_id") or r.get("id")
+            # Normalize cell_id only when record has non-nbformat id (e.g. VS Code URI)
+            if rec_id not in nb_cell_ids:
+                norm = _normalize_code_for_match(raw_code)
+                if norm in nb_id_by_code:
+                    block["id"] = nb_id_by_code[norm]
+                    block["cell_id"] = nb_id_by_code[norm]
             executed_blocks.append(block)
 
         executed_cell_ids = {c.get("id") or c.get("cell_id") for c in executed_blocks}
-        executed_code_set = {
-            _normalize_code_for_match(r.get("original_code", r.get("code", "")))
-            for r in executed_blocks
-        }
 
         pending_blocks: list[dict[str, Any]] = []
         for nb_cell in ipynb_cells:
@@ -312,8 +399,6 @@ class RecordManager:
                 continue
             if nb_cell["id"] in executed_cell_ids:
                 continue
-            if _normalize_code_for_match(nb_cell["code"]) in executed_code_set:
-                continue
             status = "empty" if _is_empty_code(nb_cell["code"]) else "pending"
             pending_blocks.append({
                 "id": nb_cell["id"],
@@ -326,7 +411,7 @@ class RecordManager:
         return executed_blocks + pending_blocks
 
     def write_record(self) -> None:
-        """Write record .py and .json files."""
+        """Write record .py, .json and .csv files."""
         if not self.notebook_path:
             return
         stem = self.notebook_path.stem
@@ -386,3 +471,32 @@ class RecordManager:
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+
+            csv_path = base_dir / f"{stem}_record.csv"
+            _write_record_csv(csv_path, payload)
+
+
+def _write_record_csv(csv_path: Path, payload: dict[str, Any]) -> None:
+    """Write record as CSV: one row per cell with flattened fields."""
+    cells = payload.get("cells", [])
+    if not cells:
+        csv_path.write_text("id,cell_type,status,exec_order,execution_count,code,error_ename,error_evalue\n", encoding="utf-8")
+        return
+    fieldnames = ["id", "cell_type", "status", "exec_order", "execution_count", "code", "error_ename", "error_evalue"]
+    rows = []
+    for c in cells:
+        err = c.get("error_info") or {}
+        rows.append({
+            "id": c.get("id") or c.get("cell_id", ""),
+            "cell_type": c.get("cell_type", "code"),
+            "status": c.get("status", ""),
+            "exec_order": c.get("exec_order", ""),
+            "execution_count": c.get("execution_count", ""),
+            "code": (c.get("code") or "").replace("\r\n", "\n").replace("\n", " ")[:500],
+            "error_ename": err.get("ename", ""),
+            "error_evalue": err.get("evalue", ""),
+        })
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)

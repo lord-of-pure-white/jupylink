@@ -11,6 +11,8 @@ import pytest
 
 from jupylink import mcp_server
 from jupylink.mcp_server import (
+    _resource_record_csv,
+    _resource_record_json,
     jupylink_get_record,
     jupylink_get_status,
     jupylink_sync_record,
@@ -73,6 +75,42 @@ class TestSyncRecord:
 
         py_path = tmp_notebook_with_record.parent / f"{tmp_notebook_with_record.stem}_record.py"
         assert py_path.exists()
+
+
+class TestMCPResources:
+    """MCP resources for _record.json and _record.csv."""
+
+    def test_resource_record_json(
+        self, tmp_notebook_with_record: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(mcp_server, "_bound_notebook", tmp_notebook_with_record)
+        result = _resource_record_json()
+        data = json.loads(result)
+        assert "notebook_path" in data
+        assert "execution_log" in data
+        assert "cells" in data
+        assert any(c.get("code") == "x = 42" for c in data["cells"])
+
+    def test_resource_record_csv(
+        self, tmp_notebook_with_record: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(mcp_server, "_bound_notebook", tmp_notebook_with_record)
+        result = _resource_record_csv()
+        assert "id,cell_type,status" in result
+        assert "x = 42" in result
+
+    def test_resource_record_json_no_notebook(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(mcp_server, "_bound_notebook", None)
+        result = _resource_record_json()
+        data = json.loads(result)
+        assert "error" in data
+        assert "No notebook bound" in data["error"]
+
+    def test_resource_record_csv_no_notebook(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(mcp_server, "_bound_notebook", None)
+        result = _resource_record_csv()
+        assert "error" in result
+        assert "No notebook bound" in result
 
 
 class TestGetStatus:

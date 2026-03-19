@@ -53,6 +53,17 @@ class TestMarkdownCellsInRecord:
         # code, markdown, code, code(empty), markdown, code
         assert cell_types == ["code", "markdown", "code", "code", "markdown", "code"]
 
+    def test_write_record_creates_csv(self, tmp_notebook: Path) -> None:
+        """write_record should create _record.csv alongside .py and .json."""
+        rm = RecordManager(tmp_notebook)
+        rm.write_record()
+
+        csv_path = tmp_notebook.parent / f"{tmp_notebook.stem}_record.csv"
+        assert csv_path.exists()
+        content = csv_path.read_text(encoding="utf-8")
+        assert "id,cell_type,status,exec_order,execution_count,code,error_ename,error_evalue" in content
+        assert "x = 42" in content
+
 
 class TestHistoryLoading:
     """Fix #4: RecordManager should load existing execution history."""
