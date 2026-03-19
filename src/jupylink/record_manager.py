@@ -248,6 +248,38 @@ class RecordManager:
         return matches[-1].get("output")
 
     @staticmethod
+    def _output_from_ipynb_cell(cell: dict) -> list[dict[str, Any]] | None:
+        """Convert ipynb cell outputs to record format (msg_type, stream, etc.)."""
+        outputs = cell.get("outputs", [])
+        if not outputs:
+            return None
+        result: list[dict[str, Any]] = []
+        for o in outputs:
+            if o.get("output_type") == "stream":
+                text = o.get("text", [])
+                if isinstance(text, list):
+                    text = "".join(text)
+                result.append({
+                    "msg_type": "stream",
+                    "name": o.get("name", "stdout"),
+                    "text": text,
+                })
+            elif o.get("output_type") == "error":
+                result.append({
+                    "msg_type": "error",
+                    "ename": o.get("ename", ""),
+                    "evalue": o.get("evalue", ""),
+                    "traceback": o.get("traceback", []),
+                })
+            elif o.get("output_type") in ("execute_result", "display_data"):
+                result.append({
+                    "msg_type": o["output_type"],
+                    "data": o.get("data", {}),
+                    "metadata": o.get("metadata", {}),
+                })
+        return result if result else None
+
+    @staticmethod
     def get_output_from_record_file(
         notebook_path: str | Path,
         cell_id: str,
@@ -255,26 +287,41 @@ class RecordManager:
     ) -> list[dict[str, Any]] | None:
         """Load output from record JSON file (for CLI use without kernel).
 
-        Returns a list of output message dicts, or None if not found.
+        Falls back to ipynb when record has no output (e.g. cell run in IDE, kernel
+        didn't capture output). Returns a list of output message dicts, or None if not found.
         """
         path = Path(notebook_path).resolve()
         json_path = path.parent / f"{path.stem}_record.json"
-        if not json_path.exists():
+        if json_path.exists():
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+                cells = data.get("cells", [])
+                matches = [c for c in cells if c.get("id") == cell_id or c.get("cell_id") == cell_id]
+                if matches:
+                    if execution_count is not None:
+                        for c in matches:
+                            if c.get("execution_count") == execution_count:
+                                out = c.get("output")
+                                if out is not None:
+                                    return out
+                        return None
+                    out = matches[-1].get("output")
+                    if out is not None:
+                        return out
+            except Exception:
+                pass
+
+        # Fallback: read from ipynb when record has no output (IDE execution, kernel didn't capture)
+        if not path.exists() or path.suffix != ".ipynb":
             return None
         try:
-            data = json.loads(json_path.read_text(encoding="utf-8"))
+            nb = nbformat.read(path, as_version=nbformat.NO_CONVERT)
         except Exception:
             return None
-        cells = data.get("cells", [])
-        matches = [c for c in cells if c.get("id") == cell_id or c.get("cell_id") == cell_id]
-        if not matches:
-            return None
-        if execution_count is not None:
-            for c in matches:
-                if c.get("execution_count") == execution_count:
-                    return c.get("output")
-            return None
-        return matches[-1].get("output")
+        for cell in nb.cells:
+            if cell.get("id") == cell_id and cell.get("outputs"):
+                return RecordManager._output_from_ipynb_cell(dict(cell))
+        return None
 
     @staticmethod
     def update_cell_output(

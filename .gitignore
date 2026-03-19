@@ -5,3 +5,5 @@ dist/
 build/
 .pytest_cache/
 *.pyc
+pytest_tmp/
+*_record.csv

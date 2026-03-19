@@ -249,7 +249,9 @@ Use `list_mcp_resources` / `fetch_mcp_resource` to view record files:
 
 - `JUPYLINK_EXEC_TIMEOUT`: Execution timeout in seconds (default: 60). Set higher for long-running cells.
 - `JUPYLINK_NO_REFRESH`: Set to `1` to disable IDE refresh notifications.
+- `JUPYLINK_REFRESH_DELAY`: Delay in seconds before invoking IDE refresh (default: 0.1). Increase if the IDE file does not update in time.
+- `JUPYLINK_LOCK_TIMEOUT`: File lock timeout in seconds (default: 10). On Windows, filelock has ~1s delay per failed acquisition; reduce for faster failure when contested.
 
 ## IDE Refresh
 
-After write-cell, create-cell, delete-cell, or execute, JupyLink requests IDE refresh via `cursor`/`code -r`. Requires `cursor` or `code` in PATH. Disable with `--no-refresh` or `JUPYLINK_NO_REFRESH=1`.
+After write-cell, create-cell, delete-cell, or execute, JupyLink requests IDE refresh via `cursor`/`code -r`. Uses debouncing: rapid successive ops coalesce into one refresh (0.1s after the last). **Refresh is skipped for paths under temp directories** (e.g. `pytest-of-*`, `Temp`, `tmp`). Requires `cursor` or `code` in PATH. Disable with `--no-refresh` or `JUPYLINK_NO_REFRESH=1`.

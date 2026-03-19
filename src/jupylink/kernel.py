@@ -6,6 +6,7 @@ import atexit
 import hashlib
 import logging
 import os
+import sys
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,37 @@ from .magics import JupyLinkMagics
 from .record_manager import RecordManager, _is_ide_injected_code
 
 logger = logging.getLogger(__name__)
+
+
+class _CapturingStreamWrapper:
+    """Wraps stdout/stderr to capture output during execution.
+
+    ipykernel sends stream output via session.send() from OutStream, not via
+    send_response, so we must intercept at the stream level.
+    """
+
+    def __init__(self, real: Any, kernel: Any, name: str) -> None:
+        self._real = real
+        self._kernel = kernel
+        self._name = name
+
+    def write(self, s: str) -> int | None:
+        if self._kernel._capturing and s:
+            self._kernel._captured_output.append({
+                "msg_type": "stream",
+                "content": {"name": self._name, "text": s},
+            })
+        return self._real.write(s)
+
+    def set_parent(self, parent: dict) -> None:
+        if hasattr(self._real, "set_parent"):
+            self._real.set_parent(parent)
+
+    def flush(self) -> None:
+        self._real.flush()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
 
 
 def _uri_to_path(uri: str) -> str | None:
@@ -64,6 +96,7 @@ class JupyLinkKernel(IPythonKernel):
         self._captured_output: list[dict[str, Any]] = []
         self._registered_for_cli = False
         self._setup_notebook_path()
+        self._wrap_streams_for_capture()
 
     def _setup_notebook_path(self) -> None:
         """Resolve notebook path from env vars and register for CLI.
@@ -76,6 +109,13 @@ class JupyLinkKernel(IPythonKernel):
             self._record_manager.set_notebook_path(path)
             self._record_manager.write_record()  # reset: all cells pending (no prior execution)
             self._register_for_cli()
+
+    def _wrap_streams_for_capture(self) -> None:
+        """Wrap stdout/stderr to capture stream output (ipykernel sends via session, not send_response)."""
+        if sys.stdout is not None and not isinstance(sys.stdout, _CapturingStreamWrapper):
+            sys.stdout = _CapturingStreamWrapper(sys.stdout, self, "stdout")
+        if sys.stderr is not None and not isinstance(sys.stderr, _CapturingStreamWrapper):
+            sys.stderr = _CapturingStreamWrapper(sys.stderr, self, "stderr")
 
     def _try_set_notebook_from_request(self) -> None:
         """If notebook path not set, try to get it from execute_request (VS Code/Cursor).
@@ -159,7 +199,8 @@ class JupyLinkKernel(IPythonKernel):
     ) -> None:
         """Override to capture IOPub messages during execution.
 
-        Note: stream output goes via session.send, not here; CLI executor merges it.
+        Stream output is captured via _CapturingStreamWrapper on stdout/stderr,
+        since ipykernel sends stream via session.send from OutStream, not here.
         """
         if self._capturing and stream is self.iopub_socket:
             msg_type = msg_or_type if isinstance(msg_or_type, str) else (msg_or_type or {}).get("msg_type", "")
@@ -249,23 +290,44 @@ class JupyLinkKernel(IPythonKernel):
         return super().do_shutdown(restart)
 
     def _serialize_output(self, captured: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Serialize captured IOPub messages for storage."""
+        """Serialize captured IOPub messages for storage.
+
+        Merges consecutive stream messages with same name for cleaner output.
+        """
         result: list[dict[str, Any]] = []
+        stream_buf: dict[str, list[str]] = {}  # name -> text chunks
+
+        def flush_stream() -> None:
+            for name, chunks in stream_buf.items():
+                if chunks:
+                    result.append({
+                        "msg_type": "stream",
+                        "name": name,
+                        "text": "".join(chunks),
+                    })
+            stream_buf.clear()
+
         for item in captured:
             msg_type = item.get("msg_type", "")
             content = item.get("content", {})
-            out: dict[str, Any] = {"msg_type": msg_type}
             if msg_type == "stream":
-                out["name"] = content.get("name", "stdout")
-                out["text"] = content.get("text", "")
-            elif msg_type == "error":
-                out["ename"] = content.get("ename", "")
-                out["evalue"] = content.get("evalue", "")
-                out["traceback"] = content.get("traceback", [])
-            elif msg_type in ("execute_result", "display_data"):
-                out["data"] = content.get("data", {})
-                out["metadata"] = content.get("metadata", {})
-                if "execution_count" in content:
-                    out["execution_count"] = content["execution_count"]
-            result.append(out)
+                name = content.get("name", "stdout")
+                text = content.get("text", "")
+                if isinstance(text, list):
+                    text = "".join(text)
+                stream_buf.setdefault(name, []).append(text)
+            else:
+                flush_stream()
+                out: dict[str, Any] = {"msg_type": msg_type}
+                if msg_type == "error":
+                    out["ename"] = content.get("ename", "")
+                    out["evalue"] = content.get("evalue", "")
+                    out["traceback"] = content.get("traceback", [])
+                elif msg_type in ("execute_result", "display_data"):
+                    out["data"] = content.get("data", {})
+                    out["metadata"] = content.get("metadata", {})
+                    if "execution_count" in content:
+                        out["execution_count"] = content["execution_count"]
+                result.append(out)
+        flush_stream()
         return result

@@ -164,7 +164,22 @@ When CLI or MCP modifies the ipynb (write-cell, create-cell, delete-cell) or exe
 
 - **Disable**: `--no-refresh` on CLI, or `JUPYLINK_NO_REFRESH=1` env var
 - **Requires**: `cursor` or `code` in PATH (install "Shell Command" from Command Palette)
+- **Delay**: Waits 0.2s (default) before invoking CLI so the filesystem can flush. Override with `JUPYLINK_REFRESH_DELAY=0.5` (seconds) if refresh is still delayed.
+- **Debouncing**: Rapid successive operations (e.g. execute_cells) coalesce into a single refresh, scheduled after the last operation.
+- **Dual method**: Uses both CLI (`cursor path -r`) and `vscode://file/path` URL scheme; the URL often triggers reload when the file is already open. Set `JUPYLINK_REFRESH_USE_URL=0` to disable the URL method.
+- **Temp paths**: Refresh is skipped for notebooks under temp directories (`pytest-of-*`, `Temp`, `tmp`) to avoid slowness when viewing test artifacts.
 - **Tip**: Install [Notebook Hot Reload](https://marketplace.visualstudio.com/items?itemName=kdkyum.notebook-hot-reload) for more reliable auto-reload
+
+## Configuration
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `JUPYLINK_EXEC_TIMEOUT` | 60 | Execution timeout (seconds) for cell runs |
+| `JUPYLINK_NO_REFRESH` | — | Set to `1` to disable IDE refresh |
+| `JUPYLINK_REFRESH_DELAY` | 0.2 | Delay (seconds) before invoking IDE refresh |
+| `JUPYLINK_REFRESH_USE_URL` | 1 | Use `vscode://file/` URL for refresh; set `0` to disable |
+| `JUPYLINK_LOCK_TIMEOUT` | 10 | File lock timeout (seconds); reduce for faster failure when contested |
+| `JUPYLINK_DEFAULT_NOTEBOOK` | — | Default notebook path when MCP tools omit `notebook_path` |
 
 ## Notebook Path
 

@@ -218,7 +218,8 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 
 - `JUPYLINK_EXEC_TIMEOUT`: Execution timeout in seconds (default: 60). Set higher for long-running cells.
 - `JUPYLINK_NO_REFRESH`: Set to `1` to disable IDE refresh notifications.
+- `JUPYLINK_REFRESH_DELAY`: Delay in seconds before invoking IDE refresh (default: 0.1).
 
 ## IDE Refresh
 
-After write-cell, create-cell, delete-cell, or execute, JupyLink requests IDE refresh via `cursor`/`code -r`. Requires `cursor` or `code` in PATH. Disable with `--no-refresh` or `JUPYLINK_NO_REFRESH=1`.
+After write-cell, create-cell, delete-cell, or execute, JupyLink requests IDE refresh via `cursor`/`code -r`. Uses debouncing (0.1s default). Requires `cursor` or `code` in PATH. Disable with `--no-refresh` or `JUPYLINK_NO_REFRESH=1`.

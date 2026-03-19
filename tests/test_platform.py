@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import webbrowser
 from pathlib import Path
 from unittest import mock
 
@@ -160,9 +161,14 @@ class TestRequestRefreshPosix:
 
         from jupylink.notify_ide import request_notebook_refresh, _refresh_disabled
         monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
+        monkeypatch.setattr("jupylink.notify_ide._get_refresh_delay", lambda: 0)
+        monkeypatch.setattr("jupylink.notify_ide._is_temp_path", lambda _: False)
+        monkeypatch.setattr(webbrowser, "open", lambda _: None)  # avoid opening URL in tests
 
+        import time
         result = request_notebook_refresh(tmp_notebook)
         assert result is True
+        time.sleep(0.1)
         assert popen_kwargs.get("start_new_session") is True
         assert "creationflags" not in popen_kwargs
 
@@ -179,13 +185,25 @@ class TestRequestRefreshPosix:
             popen_kwargs.update(kwargs)
             return mock.MagicMock()
         monkeypatch.setattr(subprocess, "Popen", fake_popen)
+        monkeypatch.setattr("os.startfile", lambda _: None)  # avoid opening URL in tests
         monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
+        monkeypatch.setattr("jupylink.notify_ide._get_refresh_delay", lambda: 0)
+        monkeypatch.setattr("jupylink.notify_ide._is_temp_path", lambda _: False)
 
+        import time
         from jupylink.notify_ide import request_notebook_refresh
         result = request_notebook_refresh(tmp_notebook)
         assert result is True
+        time.sleep(0.1)
         assert "creationflags" in popen_kwargs
         assert "start_new_session" not in popen_kwargs
+
+    def test_skips_refresh_for_temp_path(self, monkeypatch: pytest.MonkeyPatch, tmp_notebook: Path) -> None:
+        """Refresh is skipped for paths under temp (e.g. pytest artifacts)."""
+        monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
+        from jupylink.notify_ide import request_notebook_refresh
+        result = request_notebook_refresh(tmp_notebook)
+        assert result is False
 
 
 class TestUriToPathCrossPlatform:

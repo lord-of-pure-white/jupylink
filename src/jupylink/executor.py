@@ -12,7 +12,7 @@ from jupyter_client.blocking import BlockingKernelClient
 from jupyter_client.manager import start_new_kernel
 
 from .ipynb_ops import get_cell_source, update_cell_output as update_ipynb_output
-from .kernel_registry import get_connection_file
+from .kernel_registry import cleanup_stale, get_connection_file, unregister
 from .notify_ide import request_notebook_refresh
 from .record_manager import RecordManager
 
@@ -150,7 +150,10 @@ def _execute_with_client(
 
 
 def _connect_existing_kernel(path: Path) -> BlockingKernelClient | None:
-    """Try to connect to an existing JupyLink kernel for this notebook."""
+    """Try to connect to an existing JupyLink kernel for this notebook.
+
+    On connection failure, unregisters the stale entry so next execute will spawn fresh.
+    """
     cf = get_connection_file(path)
     if not cf:
         return None
@@ -166,6 +169,7 @@ def _connect_existing_kernel(path: Path) -> BlockingKernelClient | None:
             kc.stop_channels()
         except Exception:
             pass
+        unregister(path)  # remove stale entry so next execute spawns fresh
         return None
 
 
@@ -213,6 +217,7 @@ def execute_cell(notebook_path: str | Path, cell_id: str) -> dict[str, Any] | No
     First tries to connect to the existing JupyLink kernel for this notebook.
     If none is registered, spawns a new kernel and keeps it alive for reuse.
     """
+    cleanup_stale()  # remove entries whose connection files are gone
     path = Path(notebook_path).resolve()
     if not path.exists():
         return None
@@ -247,6 +252,7 @@ def execute_cells(
 
     Returns a list of results (one per cell). Use this when cells depend on each other.
     """
+    cleanup_stale()  # remove entries whose connection files are gone
     path = Path(notebook_path).resolve()
     if not path.exists():
         return []
