@@ -205,6 +205,63 @@ class TestRequestRefreshPosix:
         result = request_notebook_refresh(tmp_notebook)
         assert result is False
 
+    def test_skips_refresh_in_remote_ssh_context(self, monkeypatch: pytest.MonkeyPatch, tmp_notebook: Path) -> None:
+        """Refresh is skipped when JUPYLINK_REFRESH_SKIP_REMOTE=1."""
+        monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
+        monkeypatch.setattr("jupylink.notify_ide._is_temp_path", lambda _: False)
+        monkeypatch.setenv("JUPYLINK_NO_REFRESH", "0")
+        monkeypatch.setenv("JUPYLINK_REFRESH_SKIP_REMOTE", "1")
+        monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 12345 5.6.7.8 22")
+        from jupylink.notify_ide import request_notebook_refresh
+        result = request_notebook_refresh(tmp_notebook)
+        assert result is False
+
+    def test_uses_remote_refresh_when_ssh_connection_set(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_notebook: Path
+    ) -> None:
+        """When SSH_CONNECTION is set and host is derivable, use vscode-remote URI for refresh."""
+        monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
+        monkeypatch.setattr("jupylink.notify_ide._is_temp_path", lambda _: False)
+        monkeypatch.setenv("JUPYLINK_NO_REFRESH", "0")
+        monkeypatch.delenv("JUPYLINK_REFRESH_SKIP_REMOTE", raising=False)
+        monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 12345 5.6.7.8 22")
+        opened_uris: list[str] = []
+        import webbrowser
+
+        def capture_open(uri: str) -> None:
+            opened_uris.append(uri)
+
+        monkeypatch.setattr(webbrowser, "open", capture_open)
+        from jupylink.notify_ide import request_notebook_refresh
+        result = request_notebook_refresh(tmp_notebook)
+        assert result is True
+        import time
+        time.sleep(0.25)
+        assert len(opened_uris) == 1
+        assert "vscode-remote" in opened_uris[0]
+        assert "ssh-remote+5.6.7.8" in opened_uris[0]
+        assert tmp_notebook.name in opened_uris[0]
+
+    def test_uses_jupylink_remote_ssh_host_when_set(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_notebook: Path
+    ) -> None:
+        """JUPYLINK_REMOTE_SSH_HOST overrides host derived from SSH_CONNECTION."""
+        monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
+        monkeypatch.setattr("jupylink.notify_ide._is_temp_path", lambda _: False)
+        monkeypatch.setenv("JUPYLINK_NO_REFRESH", "0")
+        monkeypatch.delenv("JUPYLINK_REFRESH_SKIP_REMOTE", raising=False)
+        monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 12345 5.6.7.8 22")
+        monkeypatch.setenv("JUPYLINK_REMOTE_SSH_HOST", "my-server.example.com")
+        opened_uris: list[str] = []
+        import webbrowser
+        monkeypatch.setattr(webbrowser, "open", lambda uri: opened_uris.append(uri))
+        from jupylink.notify_ide import request_notebook_refresh
+        result = request_notebook_refresh(tmp_notebook)
+        assert result is True
+        import time
+        time.sleep(0.25)
+        assert "ssh-remote+my-server.example.com" in opened_uris[0]
+
 
 class TestUriToPathCrossPlatform:
     """kernel._uri_to_path should handle both Windows and Linux URIs.

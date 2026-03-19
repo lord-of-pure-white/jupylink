@@ -168,7 +168,7 @@ When CLI or MCP modifies the ipynb (write-cell, create-cell, delete-cell) or exe
 - **Debouncing**: Rapid successive operations (e.g. execute_cells) coalesce into a single refresh, scheduled after the last operation.
 - **Dual method**: Uses both CLI (`cursor path -r`) and `vscode://file/path` URL scheme; the URL often triggers reload when the file is already open. Set `JUPYLINK_REFRESH_USE_URL=0` to disable the URL method.
 - **Temp paths**: Refresh is skipped for notebooks under temp directories (`pytest-of-*`, `Temp`, `tmp`) to avoid slowness when viewing test artifacts.
-- **Tip**: Install [Notebook Hot Reload](https://marketplace.visualstudio.com/items?itemName=kdkyum.notebook-hot-reload) for more reliable auto-reload
+- **Remote SSH**: When MCP runs on the server (SSH_CONNECTION set), JupyLink uses `vscode://vscode-remote/ssh-remote+host/path` URI to trigger client refresh. Host from `JUPYLINK_REMOTE_SSH_HOST` or derived from SSH_CONNECTION. Requires X11 forwarding or similar for `webbrowser.open` to reach the client. Set `JUPYLINK_REFRESH_SKIP_REMOTE=1` to disable. Fallback: [Notebook Hot Reload](https://marketplace.visualstudio.com/items?itemName=kdkyum.notebook-hot-reload).
 
 ## Configuration
 
@@ -176,6 +176,8 @@ When CLI or MCP modifies the ipynb (write-cell, create-cell, delete-cell) or exe
 |---------|---------|-------------|
 | `JUPYLINK_EXEC_TIMEOUT` | 60 | Execution timeout (seconds) for cell runs |
 | `JUPYLINK_NO_REFRESH` | — | Set to `1` to disable IDE refresh |
+| `JUPYLINK_REFRESH_SKIP_REMOTE` | — | Set `1` to skip refresh when using Remote SSH |
+| `JUPYLINK_REMOTE_SSH_HOST` | — | SSH host for vscode-remote URI (e.g. `myserver`); fallback: from SSH_CONNECTION |
 | `JUPYLINK_REFRESH_DELAY` | 0.2 | Delay (seconds) before invoking IDE refresh |
 | `JUPYLINK_REFRESH_USE_URL` | 1 | Use `vscode://file/` URL for refresh; set `0` to disable |
 | `JUPYLINK_LOCK_TIMEOUT` | 10 | File lock timeout (seconds); reduce for faster failure when contested |

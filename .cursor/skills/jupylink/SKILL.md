@@ -249,6 +249,8 @@ Use `list_mcp_resources` / `fetch_mcp_resource` to view record files:
 
 - `JUPYLINK_EXEC_TIMEOUT`: Execution timeout in seconds (default: 60). Set higher for long-running cells.
 - `JUPYLINK_NO_REFRESH`: Set to `1` to disable IDE refresh notifications.
+- `JUPYLINK_REFRESH_SKIP_REMOTE`: Set to `1` to skip refresh when using Remote SSH.
+- `JUPYLINK_REMOTE_SSH_HOST`: SSH host for vscode-remote URI (e.g. `myserver`); auto-derived from SSH_CONNECTION when unset.
 - `JUPYLINK_REFRESH_DELAY`: Delay in seconds before invoking IDE refresh (default: 0.1). Increase if the IDE file does not update in time.
 - `JUPYLINK_LOCK_TIMEOUT`: File lock timeout in seconds (default: 10). On Windows, filelock has ~1s delay per failed acquisition; reduce for faster failure when contested.
 

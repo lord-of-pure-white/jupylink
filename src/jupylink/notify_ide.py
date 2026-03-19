@@ -39,6 +39,27 @@ def _should_refresh() -> bool:
     return os.environ.get("JUPYLINK_NO_REFRESH", "").lower() not in ("1", "true", "yes")
 
 
+def _is_remote_ssh_context() -> bool:
+    """Return True when we're in Remote SSH context (MCP runs on server)."""
+    if os.environ.get("JUPYLINK_REFRESH_SKIP_REMOTE", "").lower() in ("1", "true", "yes"):
+        return True
+    return bool(os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_CLIENT"))
+
+
+def _get_remote_ssh_host() -> str | None:
+    """Get SSH host for vscode-remote URI. From JUPYLINK_REMOTE_SSH_HOST or SSH_CONNECTION."""
+    host = os.environ.get("JUPYLINK_REMOTE_SSH_HOST", "").strip()
+    if host:
+        return host
+    # SSH_CONNECTION format: "client_ip client_port server_ip server_port"
+    conn = os.environ.get("SSH_CONNECTION", "")
+    if conn:
+        parts = conn.split()
+        if len(parts) >= 3:
+            return parts[2]
+    return None
+
+
 def _find_editor_cmd() -> str | None:
     """Find cursor or code CLI. Returns full path for reliable subprocess."""
     import shutil
@@ -118,26 +139,59 @@ def _path_to_vscode_uri(path: Path) -> str:
     return f"vscode://file{p}"
 
 
-def _run_refresh(path: Path, cmd: str) -> None:
-    """Invoke IDE CLI and/or URL scheme to focus/reload the file. Called after debounce delay."""
-    # 1. CLI: cursor path -r (reuse window)
-    try:
-        kwargs: dict = {
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
-        }
-        use_no_window = os.environ.get("JUPYLINK_REFRESH_NO_WINDOW", "1").lower() in ("1", "true", "yes")
-        if sys.platform == "win32" and use_no_window:
-            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        else:
-            kwargs["start_new_session"] = True
-        subprocess.Popen([cmd, str(path), "-r"], **kwargs)
-    except Exception:
-        logger.debug("Failed to request IDE refresh for %s", path, exc_info=True)
+def _path_to_vscode_remote_uri(path: Path, host: str) -> str:
+    """Convert file path to vscode-remote URI for Remote SSH refresh.
 
-    # 2. URL scheme: vscode://file/path - often triggers reload when file already open.
-    # Set JUPYLINK_REFRESH_USE_URL=0 to disable.
-    if os.environ.get("JUPYLINK_REFRESH_USE_URL", "1").lower() not in ("0", "false", "no"):
+    Format: vscode://vscode-remote/ssh-remote+[USER@]HOST/path#1,1
+    The #1,1 signals a file (not folder) to avoid opening-as-folder issues.
+    """
+    p = path.resolve()
+    # Ensure Unix-style path for remote
+    path_str = str(p).replace("\\", "/")
+    if path_str.startswith("/"):
+        remote_path = path_str
+    else:
+        # Windows path: E:\x\y -> /x/y (or use as-is if host is Windows)
+        if sys.platform == "win32" and p.drive:
+            remote_path = "/" + path_str[len(p.drive) :].lstrip("/")
+        else:
+            remote_path = "/" + path_str
+    return f"vscode://vscode-remote/ssh-remote+{host}{remote_path}#1,1"
+
+
+def _run_refresh(path: Path, cmd: str | None = None, remote_host: str | None = None) -> None:
+    """Invoke IDE CLI and/or URL scheme to focus/reload the file. Called after debounce delay."""
+    use_url = os.environ.get("JUPYLINK_REFRESH_USE_URL", "1").lower() not in ("0", "false", "no")
+
+    if remote_host:
+        # Remote SSH: use vscode-remote URI. With X11 forwarding, webbrowser.open may reach client.
+        if use_url:
+            try:
+                uri = _path_to_vscode_remote_uri(path, remote_host)
+                import webbrowser
+                webbrowser.open(uri)
+                logger.debug("Requested remote refresh via vscode-remote URI for %s", path)
+            except Exception:
+                logger.debug("Failed to open vscode-remote URI for %s", path, exc_info=True)
+        return
+
+    # Local: CLI + vscode://file/ URL
+    if cmd:
+        try:
+            kwargs: dict = {
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            use_no_window = os.environ.get("JUPYLINK_REFRESH_NO_WINDOW", "1").lower() in ("1", "true", "yes")
+            if sys.platform == "win32" and use_no_window:
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            else:
+                kwargs["start_new_session"] = True
+            subprocess.Popen([cmd, str(path), "-r"], **kwargs)
+        except Exception:
+            logger.debug("Failed to request IDE refresh for %s", path, exc_info=True)
+
+    if use_url:
         try:
             uri = _path_to_vscode_uri(path)
             if sys.platform == "win32":
@@ -164,11 +218,11 @@ def _is_temp_path(path: Path) -> bool:
     return any(m in path_str for m in temp_markers)
 
 
-def _on_refresh_timer(path: Path, cmd: str) -> None:
+def _on_refresh_timer(path: Path, cmd: str | None, remote_host: str | None) -> None:
     """Called when debounce timer fires: run refresh and clear pending."""
     with _pending_lock:
         _pending_refresh.pop(path, None)
-    _run_refresh(path, cmd)
+    _run_refresh(path, cmd=cmd, remote_host=remote_host)
 
 
 def request_notebook_refresh(notebook_path: str | Path) -> bool:
@@ -178,9 +232,17 @@ def request_notebook_refresh(notebook_path: str | Path) -> bool:
     Uses debouncing: rapid successive requests for the same path coalesce into
     one refresh, scheduled delay seconds after the last request.
     Skips refresh for paths under temp directories (e.g. pytest artifacts).
+
+    Remote SSH: When MCP runs on the server (SSH_CONNECTION set), uses
+    vscode://vscode-remote/ssh-remote+host/path URI to trigger client refresh.
+    Host from JUPYLINK_REMOTE_SSH_HOST or derived from SSH_CONNECTION.
+    Set JUPYLINK_REFRESH_SKIP_REMOTE=1 to disable remote refresh.
     Returns True if refresh was requested.
     """
     if not _should_refresh():
+        return False
+    if os.environ.get("JUPYLINK_REFRESH_SKIP_REMOTE", "").lower() in ("1", "true", "yes"):
+        logger.debug("Skip refresh: JUPYLINK_REFRESH_SKIP_REMOTE is set")
         return False
     path = Path(notebook_path).resolve()
     if not path.exists() or path.suffix != ".ipynb":
@@ -188,17 +250,28 @@ def request_notebook_refresh(notebook_path: str | Path) -> bool:
     if _is_temp_path(path):
         logger.debug("Skip refresh for temp path: %s", path)
         return False
-    cmd = _find_editor_cmd()
-    if not cmd:
-        logger.debug("IDE CLI (cursor/code) not found in PATH; skip refresh for %s", path)
-        return False
+
+    cmd: str | None = None
+    remote_host: str | None = None
+    if _is_remote_ssh_context():
+        remote_host = _get_remote_ssh_host()
+        if remote_host:
+            logger.debug("Using vscode-remote refresh for %s (host=%s)", path, remote_host)
+        else:
+            logger.debug("Skip refresh: Remote SSH but no host (set JUPYLINK_REMOTE_SSH_HOST)")
+            return False
+    else:
+        cmd = _find_editor_cmd()
+        if not cmd:
+            logger.debug("IDE CLI (cursor/code) not found in PATH; skip refresh for %s", path)
+            return False
 
     delay = _get_refresh_delay()
     with _pending_lock:
         old = _pending_refresh.pop(path, None)
         if old is not None:
             old.cancel()
-        timer = threading.Timer(delay, _on_refresh_timer, args=(path, cmd))
+        timer = threading.Timer(delay, _on_refresh_timer, args=(path, cmd, remote_host))
         timer.daemon = True
         _pending_refresh[path] = timer
         timer.start()
