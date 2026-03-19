@@ -166,6 +166,7 @@ Entry: `jupylink <command> <notebook> [args]`
 | `list-cells` | notebook | — | cell list |
 | `execute` | notebook, cell_id [cell_id ...] | `--no-refresh` | JSON result(s); multiple cells = same kernel |
 | `record` | notebook | — | sync message |
+| `list-kernels` | — | — | running kernels: notebook_path, connection_file |
 | `cleanup-kernels` | — | — | removed count |
 | `serve` | — | `-p PORT`, `-n notebook` | MCP server |
 
@@ -206,6 +207,7 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 | `jupylink_execute_cell` | notebook_path, cell_id | JSON result or error |
 | `jupylink_execute_cells` | notebook_path, cell_ids | JSON list of results; use for dependent cells |
 | `jupylink_list_cells` | notebook_path | JSON cell list |
+| `jupylink_list_kernels` | — | JSON list of running kernels: notebook_path, connection_file |
 | `jupylink_get_record` | notebook_path | .py record content (read-only if file exists) |
 | `jupylink_sync_record` | notebook_path | Re-merges ipynb with history, rewrites record files |
 | `jupylink_get_status` | notebook_path | Lightweight JSON summary of cell statuses (read-only) |

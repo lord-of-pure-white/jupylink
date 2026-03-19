@@ -12,6 +12,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .executor import execute_cell, execute_cells
 from .ipynb_ops import create_cell, delete_cell, get_cell_source, list_cells, write_cell
+from .kernel_registry import list_kernels
 from .record_manager import RecordManager
 
 mcp = FastMCP("JupyLink", json_response=True)
@@ -162,6 +163,17 @@ def jupylink_list_cells(notebook_path: str | None = None) -> str:
     path = _resolve_notebook(notebook_path)
     cells = list_cells(path)
     return json.dumps(cells, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def jupylink_list_kernels() -> str:
+    """List running JupyLink kernels and their associated notebook files.
+
+    Returns notebook_path and connection_file for each kernel. Useful to see
+    which notebooks have active kernels (e.g. from MCP execute without opening).
+    """
+    kernels = list_kernels()
+    return json.dumps(kernels, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()

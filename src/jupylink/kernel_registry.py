@@ -10,7 +10,9 @@ import json
 import logging
 import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 from filelock import FileLock
 
@@ -54,6 +56,26 @@ def _normalize(path: str | Path) -> str:
 def _lock_path() -> Path:
     """Path to the lock file for the registry."""
     return _registry_path().with_suffix(".json.lock")
+
+
+def _spawn_lock_path() -> Path:
+    """Path to the global spawn lock (serializes kernel spawns per machine)."""
+    return _registry_path().parent / "spawn.lock"
+
+
+@contextmanager
+def spawn_lock(timeout: float = 30.0) -> Iterator[None]:
+    """Acquire exclusive lock before spawning a kernel.
+
+    Ensures only one kernel is spawned per notebook when multiple MCP requests
+    arrive concurrently (e.g. without opening the notebook first).
+    """
+    lock = FileLock(_spawn_lock_path(), timeout=timeout)
+    try:
+        lock.acquire()
+        yield
+    finally:
+        lock.release()
 
 
 def _read_registry() -> dict[str, str]:
@@ -134,6 +156,30 @@ def get_connection_file(notebook_path: str | Path) -> str | None:
             _write_registry(kernels)
             return None
         return cf
+
+    return _with_registry_lock(_do)
+
+
+def list_kernels() -> list[dict[str, str]]:
+    """List all registered kernels: notebook_path and connection_file.
+
+    Automatically removes stale entries (connection file gone).
+    Returns list of {"notebook_path": str, "connection_file": str}.
+    """
+    def _do():
+        kernels = _read_registry()
+        result = []
+        stale = []
+        for nb, cf in kernels.items():
+            if not Path(cf).exists():
+                stale.append(nb)
+                continue
+            result.append({"notebook_path": nb, "connection_file": cf})
+        if stale:
+            for nb in stale:
+                kernels.pop(nb, None)
+            _write_registry(kernels)
+        return result
 
     return _with_registry_lock(_do)
 

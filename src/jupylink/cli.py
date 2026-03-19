@@ -8,7 +8,7 @@ from pathlib import Path
 import typer
 
 from .ipynb_ops import create_cell, delete_cell, get_cell_source, list_cells, write_cell
-from .kernel_registry import cleanup_stale
+from .kernel_registry import cleanup_stale, list_kernels
 from .notify_ide import request_notebook_refresh, set_refresh_disabled
 from .record_manager import RecordManager
 
@@ -104,6 +104,18 @@ def list_cells_cmd(
     for c in cells:
         empty = " (empty)" if c["empty"] else ""
         typer.echo(f"  [{c['index']}] {c['id']} ({c['cell_type']}){empty}: {c['source_preview']!r}")
+
+
+@app.command(name="list-kernels")
+def list_kernels_cmd() -> None:
+    """List running kernels and their associated notebook files."""
+    kernels = list_kernels()
+    if not kernels:
+        typer.echo("No running kernels.")
+        return
+    for k in kernels:
+        typer.echo(f"  {k['notebook_path']}")
+        typer.echo(f"    -> {k['connection_file']}")
 
 
 @app.command(name="cleanup-kernels")

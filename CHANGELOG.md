@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - `JUPYLINK_REFRESH_USE_URL` default changed from 1 to 0 (URL-based refresh disabled by default)
 
+### Fixed
+
+- **Single kernel per notebook**: When using MCP without opening the notebook first, concurrent requests no longer spawn multiple kernels. Added spawn lock and immediate registry write so only one kernel operates per notebook per machine.
+
 ## [0.1.0] - 2025-03-19
 
 ### Added

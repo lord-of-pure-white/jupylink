@@ -12,7 +12,7 @@ from jupyter_client.blocking import BlockingKernelClient
 from jupyter_client.manager import start_new_kernel
 
 from .ipynb_ops import get_cell_source, update_cell_output as update_ipynb_output
-from .kernel_registry import cleanup_stale, get_connection_file, unregister
+from .kernel_registry import cleanup_stale, get_connection_file, register, spawn_lock, unregister
 from .notify_ide import request_notebook_refresh
 from .record_manager import RecordManager
 
@@ -20,8 +20,6 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_EXEC_TIMEOUT = 60
 _KERNEL_READY_TIMEOUT = 5
-_KERNEL_REGISTRATION_POLL_INTERVAL = 0.3
-_KERNEL_REGISTRATION_MAX_WAIT = 3.0
 
 
 def _get_exec_timeout() -> int:
@@ -195,23 +193,6 @@ def _spawn_kernel(path: Path) -> tuple[Any, BlockingKernelClient] | None:
         return None
 
 
-def _wait_for_kernel_registration(path: Path) -> BlockingKernelClient | None:
-    """Poll for the newly spawned kernel to register in the registry.
-
-    Spawned kernels register themselves asynchronously; this avoids the race
-    where the next execute_cell call can't find the kernel yet.
-    """
-    waited = 0.0
-    while waited < _KERNEL_REGISTRATION_MAX_WAIT:
-        time.sleep(_KERNEL_REGISTRATION_POLL_INTERVAL)
-        waited += _KERNEL_REGISTRATION_POLL_INTERVAL
-        cf = get_connection_file(path)
-        if cf:
-            logger.debug("Kernel registered after %.1fs", waited)
-            return None
-    return None
-
-
 def execute_cell(notebook_path: str | Path, cell_id: str) -> dict[str, Any] | None:
     """Execute a cell by cell_id and return status, output, execution_count.
 
@@ -234,16 +215,26 @@ def execute_cell(notebook_path: str | Path, cell_id: str) -> dict[str, Any] | No
         finally:
             kc.stop_channels()
 
-    pair = _spawn_kernel(path)
-    if not pair:
-        return None
-    km, kc = pair
-    try:
-        result = _execute_with_client(kc, code, cell_id=cell_id, notebook_path=path)
-        return result
-    finally:
-        kc.stop_channels()
-        _wait_for_kernel_registration(path)
+    with spawn_lock():
+        kc = _connect_existing_kernel(path)
+        if kc:
+            try:
+                return _execute_with_client(kc, code, cell_id=cell_id, notebook_path=path)
+            finally:
+                kc.stop_channels()
+
+        pair = _spawn_kernel(path)
+        if not pair:
+            return None
+        km, kc = pair
+        cf = getattr(km, "connection_file", None)
+        if cf:
+            register(path, cf)
+        try:
+            result = _execute_with_client(kc, code, cell_id=cell_id, notebook_path=path)
+            return result
+        finally:
+            kc.stop_channels()
 
 
 def execute_cells(
@@ -283,12 +274,22 @@ def execute_cells(
         finally:
             kc.stop_channels()
 
-    pair = _spawn_kernel(path)
-    if not pair:
-        return []
-    km, kc = pair
-    try:
-        return _run_with_client(kc)
-    finally:
-        kc.stop_channels()
-        _wait_for_kernel_registration(path)
+    with spawn_lock():
+        kc = _connect_existing_kernel(path)
+        if kc:
+            try:
+                return _run_with_client(kc)
+            finally:
+                kc.stop_channels()
+
+        pair = _spawn_kernel(path)
+        if not pair:
+            return []
+        km, kc = pair
+        cf = getattr(km, "connection_file", None)
+        if cf:
+            register(path, cf)
+        try:
+            return _run_with_client(kc)
+        finally:
+            kc.stop_channels()

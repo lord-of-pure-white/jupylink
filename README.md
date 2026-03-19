@@ -54,6 +54,9 @@ jupylink execute notebook.ipynb cell_id [cell_id ...]
 # Sync record: merge ipynb with existing execution data (preserves history)
 jupylink record notebook.ipynb
 
+# List running kernels and their notebook files
+jupylink list-kernels
+
 # Cleanup stale kernel registry entries
 jupylink cleanup-kernels
 
@@ -109,6 +112,7 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 - `jupylink_execute_cell` — Execute single cell
 - `jupylink_execute_cells` — Execute multiple cells (same kernel, for dependent cells)
 - `jupylink_list_cells` — List all cells
+- `jupylink_list_kernels` — List running kernels and their notebook files
 - `jupylink_get_record` — Get agent-friendly .py record content
 - `jupylink_sync_record` — Sync record (merge ipynb with execution history; same as CLI `record`)
 - `jupylink_get_status` — Lightweight status summary (read-only, no side effects)
