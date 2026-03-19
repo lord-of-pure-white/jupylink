@@ -144,6 +144,7 @@ def _execute_with_client(
         update_ipynb_output(
             notebook_path, cell_id, captured, result.get("execution_count")
         )
+        RecordManager.sync_record(notebook_path)
     if notebook_path:
         request_notebook_refresh(notebook_path)
     return result

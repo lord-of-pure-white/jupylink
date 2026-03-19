@@ -360,6 +360,21 @@ class RecordManager:
                     return True
         return False
 
+    @staticmethod
+    def sync_record(notebook_path: str | Path) -> None:
+        """Re-merge ipynb execution state into record and rewrite record files.
+
+        Call after CLI/MCP execute so get_record/get_status reflect execution immediately.
+        Fixes desync when kernel didn't record (e.g. non-JupyLink kernel, or race).
+        """
+        path = Path(notebook_path).resolve()
+        if not path.exists() or path.suffix != ".ipynb":
+            return
+        rm = RecordManager(path)
+        rm.load_from_record_file()
+        rm.merge_ipynb_execution_state()
+        rm.write_record()
+
     def _get_ipynb_cells(self) -> list[dict[str, Any]]:
         """Read code and markdown cells from ipynb in order, including empty cells for layout.
 
