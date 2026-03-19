@@ -46,6 +46,13 @@ def _is_remote_ssh_context() -> bool:
     return bool(os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_CLIENT"))
 
 
+def _get_url_scheme() -> str:
+    """Return cursor:// or vscode://. Default cursor:// for Cursor; set JUPYLINK_REFRESH_USE_VSCODE=1 for VS Code."""
+    if os.environ.get("JUPYLINK_REFRESH_USE_VSCODE", "").lower() in ("1", "true", "yes"):
+        return "vscode"
+    return "cursor"
+
+
 def _get_remote_ssh_host() -> str | None:
     """Get SSH host for vscode-remote URI. From JUPYLINK_REMOTE_SSH_HOST or SSH_CONNECTION."""
     host = os.environ.get("JUPYLINK_REMOTE_SSH_HOST", "").strip()
@@ -129,20 +136,20 @@ def _find_editor_cmd() -> str | None:
 
 
 def _path_to_vscode_uri(path: Path) -> str:
-    """Convert file path to vscode://file/ URI. Cursor registers as handler."""
+    """Convert file path to cursor://file/ or vscode://file/ URI."""
+    scheme = _get_url_scheme()
     p = path.resolve()
     if sys.platform == "win32":
-        # E:\projects\x.ipynb -> vscode://file/E:/projects/x.ipynb
         drive = p.drive
         rest = str(p)[len(drive) :].replace("\\", "/")
-        return f"vscode://file/{drive}{rest}"
-    return f"vscode://file{p}"
+        return f"{scheme}://file/{drive}{rest}"
+    return f"{scheme}://file{p}"
 
 
 def _path_to_vscode_remote_uri(path: Path, host: str) -> str:
-    """Convert file path to vscode-remote URI for Remote SSH refresh.
+    """Convert file path to cursor/vscode-remote URI for Remote SSH refresh.
 
-    Format: vscode://vscode-remote/ssh-remote+[USER@]HOST/path#1,1
+    Format: cursor://vscode-remote/ssh-remote+[USER@]HOST/path#1,1 (or vscode://)
     The #1,1 signals a file (not folder) to avoid opening-as-folder issues.
     """
     p = path.resolve()
@@ -156,7 +163,8 @@ def _path_to_vscode_remote_uri(path: Path, host: str) -> str:
             remote_path = "/" + path_str[len(p.drive) :].lstrip("/")
         else:
             remote_path = "/" + path_str
-    return f"vscode://vscode-remote/ssh-remote+{host}{remote_path}#1,1"
+    scheme = _get_url_scheme()
+    return f"{scheme}://vscode-remote/ssh-remote+{host}{remote_path}#1,1"
 
 
 def _run_refresh(path: Path, cmd: str | None = None, remote_host: str | None = None) -> None:

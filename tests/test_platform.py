@@ -238,6 +238,7 @@ class TestRequestRefreshPosix:
         import time
         time.sleep(0.25)
         assert len(opened_uris) == 1
+        assert opened_uris[0].startswith("cursor://")
         assert "vscode-remote" in opened_uris[0]
         assert "ssh-remote+5.6.7.8" in opened_uris[0]
         assert tmp_notebook.name in opened_uris[0]
@@ -260,7 +261,28 @@ class TestRequestRefreshPosix:
         assert result is True
         import time
         time.sleep(0.25)
+        assert opened_uris[0].startswith("cursor://")
         assert "ssh-remote+my-server.example.com" in opened_uris[0]
+
+    def test_uses_vscode_scheme_when_env_set(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_notebook: Path
+    ) -> None:
+        """JUPYLINK_REFRESH_USE_VSCODE=1 uses vscode:// instead of cursor://."""
+        monkeypatch.setattr("jupylink.notify_ide._refresh_disabled", False)
+        monkeypatch.setattr("jupylink.notify_ide._is_temp_path", lambda _: False)
+        monkeypatch.setenv("JUPYLINK_NO_REFRESH", "0")
+        monkeypatch.delenv("JUPYLINK_REFRESH_SKIP_REMOTE", raising=False)
+        monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 12345 5.6.7.8 22")
+        monkeypatch.setenv("JUPYLINK_REFRESH_USE_VSCODE", "1")
+        opened_uris: list[str] = []
+        import webbrowser
+        monkeypatch.setattr(webbrowser, "open", lambda uri: opened_uris.append(uri))
+        from jupylink.notify_ide import request_notebook_refresh
+        result = request_notebook_refresh(tmp_notebook)
+        assert result is True
+        import time
+        time.sleep(0.25)
+        assert opened_uris[0].startswith("vscode://")
 
 
 class TestUriToPathCrossPlatform:
