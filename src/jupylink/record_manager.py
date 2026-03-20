@@ -493,12 +493,13 @@ class RecordManager:
         if not self.notebook_path:
             return
         self._sync_notebook_path_for_fs()
+        cells = self._build_cells_list()
+        # _get_ipynb_cells() also syncs; paths for outputs must use the latest notebook_path.
+        self._sync_notebook_path_for_fs()
         stem = self.notebook_path.stem
         base_dir = self.notebook_path.parent
         py_path = base_dir / f"{stem}_record.py"
         json_path = base_dir / f"{stem}_record.json"
-
-        cells = self._build_cells_list()
         # Build execution_log from cells (uses normalized cell_ids; raw _execution_log may have vscode URIs)
         execution_log_filtered = [
             {"cell_id": c.get("id") or c.get("cell_id"), "status": c.get("status", "ok")}

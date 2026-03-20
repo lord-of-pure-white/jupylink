@@ -131,12 +131,25 @@ def resolve_notebook_filesystem_path(path: str | Path) -> Path:
     Those are not valid ``Path.parent`` segments on the remote filesystem; strip
     the pseudo-prefix before ``resolve()`` so ``mkdir`` / lock files work.
     """
-    raw = str(path).strip()
-    if not raw:
+    s = str(path).strip()
+    if not s:
         raise ValueError("Empty notebook path")
-    stripped = _strip_vscode_remote_filesystem_path(raw)
-    stripped = _fix_windows_drive_relative(stripped)
-    return Path(stripped).expanduser().resolve()
+    # Multiple passes: e.g. file: → /ssh-remote+… → /share/…
+    for _ in range(8):
+        t = _strip_vscode_remote_filesystem_path(s)
+        t = _fix_windows_drive_relative(t)
+        if t == s:
+            break
+        s = t
+    p = Path(s).expanduser().resolve()
+    # ``resolve()`` can preserve a bogus first segment if the path was already absolute junk
+    ps = str(p)
+    if "/ssh-remote+" in ps or ps.startswith("ssh-remote+"):
+        s2 = _strip_vscode_remote_filesystem_path(ps)
+        s2 = _fix_windows_drive_relative(s2)
+        if s2 != ps:
+            p = Path(s2).expanduser().resolve()
+    return p
 
 
 def _normalize(path: str | Path) -> str:

@@ -255,6 +255,8 @@ class JupyLinkKernel(IPythonKernel):
     ) -> dict[str, Any]:
         """Execute code and record result."""
         self._try_set_notebook_from_request()
+        # IDE (Remote SSH) may supply paths with /ssh-remote+…; normalize before record I/O.
+        self._record_manager._sync_notebook_path_for_fs()
         self._start_capture()
         try:
             reply = await super().do_execute(
