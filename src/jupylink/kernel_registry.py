@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
+import urllib.parse
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -17,6 +19,9 @@ from typing import Iterator
 from filelock import FileLock
 
 logger = logging.getLogger(__name__)
+
+# Next to foo.ipynb: foo.jupylink_kernel.json — lets IDE kernel auto-find MCP kernel without env vars.
+KERNEL_SIDECAR_SUFFIX = ".jupylink_kernel.json"
 
 
 def _registry_path() -> Path:
@@ -45,12 +50,71 @@ def _registry_path() -> Path:
     return dir_path / "kernels.json"
 
 
+_SSH_REMOTE_PATH_PREFIX = re.compile(r"^/ssh-remote\+[^/]+")
+
+
+def _strip_vscode_remote_filesystem_path(path_str: str) -> str:
+    """Map Remote SSH / WSL vscode-remote URIs to the on-disk path on that machine.
+
+    VS Code / Cursor may report the same notebook as:
+    - ``/share/home/user/x.ipynb`` (plain)
+    - ``/ssh-remote+7b22.../share/home/user/x.ipynb`` (authority embedded in path)
+    - ``vscode-remote://ssh-remote+7b22.../share/home/user/x.ipynb``
+
+    Registry keys must match across these forms so CLI/MCP reuse the IDE kernel.
+    """
+    s = path_str.strip()
+    if not s:
+        return s
+    if s.lower().startswith("vscode-remote:"):
+        try:
+            parsed = urllib.parse.urlparse(s)
+            netloc = (parsed.netloc or "").lower()
+            if netloc.startswith("ssh-remote+") or netloc.startswith("wsl+"):
+                p = urllib.parse.unquote(parsed.path or "")
+                p = _fix_windows_leading_slash_drive(p)
+                return p if p else s
+        except Exception:
+            pass
+    m = _SSH_REMOTE_PATH_PREFIX.match(s)
+    if m:
+        tail = s[m.end() :]
+        if not tail.startswith("/"):
+            tail = f"/{tail}"
+        tail = _fix_windows_leading_slash_drive(tail)
+        return tail
+    return s
+
+
+def _fix_windows_leading_slash_drive(p: str) -> str:
+    """``/C:/Users/...`` is wrong for pathlib on Windows; normalize to ``C:/Users/...``."""
+    if os.name != "nt" or len(p) < 4:
+        return p
+    if p.startswith("/") and p[2] == ":" and p[3] in "/\\":
+        return p[1] + ":" + p[3:]
+    return p
+
+
+def _fix_windows_drive_relative(p: str) -> str:
+    """``C:Users\\...`` (missing ``\\`` after drive) resolves relative to cwd; make absolute."""
+    if os.name != "nt" or len(p) < 3:
+        return p
+    if p[1] == ":" and p[2] not in "\\/":
+        return p[:2] + "\\" + p[2:]
+    return p
+
+
 def _normalize(path: str | Path) -> str:
     """Normalize notebook path for consistent lookup.
 
-    Uses normcase on Windows so E:\\x and e:\\x map to the same key.
+    Strips vscode-remote / ssh-remote path prefixes so the same file on a remote
+    host shares one registry entry. Uses normcase on Windows so E:\\x and e:\\x
+    map to the same key.
     """
-    return os.path.normcase(str(Path(path).resolve()))
+    raw = str(path).strip()
+    stripped = _strip_vscode_remote_filesystem_path(raw)
+    stripped = _fix_windows_drive_relative(stripped)
+    return os.path.normcase(str(Path(stripped).resolve()))
 
 
 def _lock_path() -> Path:
@@ -106,6 +170,60 @@ def _with_registry_lock(operation):
         return operation()
 
 
+def _resolved_notebook_file(notebook_path: str | Path) -> Path | None:
+    """Filesystem path to the .ipynb for sidecar placement; None if missing or not a file."""
+    raw = str(notebook_path).strip()
+    stripped = _strip_vscode_remote_filesystem_path(raw)
+    try:
+        p = Path(stripped).expanduser().resolve()
+    except OSError:
+        return None
+    if p.suffix.lower() != ".ipynb" or not p.is_file():
+        return None
+    return p
+
+
+def sidecar_path_for_notebook(notebook_path: str | Path) -> Path | None:
+    """Path to the kernel pointer file next to the notebook, if the notebook exists on disk."""
+    nb = _resolved_notebook_file(notebook_path)
+    if nb is None:
+        return None
+    return nb.with_name(nb.stem + KERNEL_SIDECAR_SUFFIX)
+
+
+def _write_kernel_sidecar(notebook_path: str | Path, connection_file: str) -> None:
+    sp = sidecar_path_for_notebook(notebook_path)
+    if sp is None:
+        return
+    nb = _resolved_notebook_file(notebook_path)
+    data = {
+        "connection_file": str(Path(connection_file).resolve()),
+        "notebook_path": str(nb) if nb else str(notebook_path),
+    }
+    try:
+        sp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except OSError:
+        logger.debug("Could not write kernel sidecar %s", sp, exc_info=True)
+
+
+def _sidecar_path_from_notebook_path(notebook_path: str | Path) -> Path | None:
+    raw = str(notebook_path).strip()
+    stripped = _strip_vscode_remote_filesystem_path(raw)
+    p = Path(stripped)
+    if p.suffix.lower() != ".ipynb":
+        return None
+    return p.parent / f"{p.stem}{KERNEL_SIDECAR_SUFFIX}"
+
+
+def _remove_kernel_sidecar(notebook_path: str | Path) -> None:
+    sp = _sidecar_path_from_notebook_path(notebook_path)
+    if sp is not None and sp.is_file():
+        try:
+            sp.unlink()
+        except OSError:
+            pass
+
+
 def register(notebook_path: str | Path, connection_file: str) -> None:
     """Register a kernel for the given notebook.
 
@@ -116,10 +234,14 @@ def register(notebook_path: str | Path, connection_file: str) -> None:
 
     def _do():
         kernels = _read_registry()
+        for k in list(kernels):
+            if k != nb and _normalize(k) == nb:
+                kernels.pop(k, None)
         kernels[nb] = cf
         _write_registry(kernels)
 
     _with_registry_lock(_do)
+    _write_kernel_sidecar(notebook_path, cf)
     logger.debug("Registered kernel for %s -> %s", nb, cf)
 
 
@@ -132,10 +254,13 @@ def unregister(notebook_path: str | Path) -> None:
 
     def _do():
         kernels = _read_registry()
-        kernels.pop(nb, None)
+        for k in list(kernels):
+            if _normalize(k) == nb:
+                kernels.pop(k, None)
         _write_registry(kernels)
 
     _with_registry_lock(_do)
+    _remove_kernel_sidecar(notebook_path)
 
 
 def get_connection_file(notebook_path: str | Path) -> str | None:
@@ -150,9 +275,17 @@ def get_connection_file(notebook_path: str | Path) -> str | None:
         kernels = _read_registry()
         cf = kernels.get(nb)
         if not cf:
+            for k, v in kernels.items():
+                if _normalize(k) == nb:
+                    cf = v
+                    break
+        if not cf:
             return None
         if not Path(cf).exists():
-            kernels.pop(nb, None)
+            to_drop = [k for k in kernels if _normalize(k) == nb]
+            for k in to_drop:
+                kernels.pop(k, None)
+                _remove_kernel_sidecar(k)
             _write_registry(kernels)
             return None
         return cf
@@ -165,21 +298,24 @@ def list_kernels() -> list[dict[str, str]]:
 
     Automatically removes stale entries (connection file gone).
     Returns list of {"notebook_path": str, "connection_file": str}.
+    Notebook paths are canonical (remote URI prefixes stripped).
     """
     def _do():
         kernels = _read_registry()
-        result = []
+        by_canon: dict[str, dict[str, str]] = {}
         stale = []
         for nb, cf in kernels.items():
             if not Path(cf).exists():
                 stale.append(nb)
                 continue
-            result.append({"notebook_path": nb, "connection_file": cf})
+            canon = _normalize(nb)
+            by_canon[canon] = {"notebook_path": canon, "connection_file": cf}
         if stale:
             for nb in stale:
                 kernels.pop(nb, None)
+                _remove_kernel_sidecar(nb)
             _write_registry(kernels)
-        return result
+        return list(by_canon.values())
 
     return _with_registry_lock(_do)
 
@@ -195,6 +331,7 @@ def cleanup_stale() -> int:
         stale = [nb for nb, cf in kernels.items() if not Path(cf).exists()]
         for nb in stale:
             kernels.pop(nb, None)
+            _remove_kernel_sidecar(nb)
         if stale:
             _write_registry(kernels)
         return len(stale)

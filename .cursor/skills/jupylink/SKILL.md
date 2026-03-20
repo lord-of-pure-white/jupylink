@@ -229,11 +229,29 @@ Use `list_mcp_resources` / `fetch_mcp_resource` to view record files:
 
 **Path resolution**: `%notebook_path` > env vars > **auto from execute_request** (VS Code/Cursor extracts path from cellId on first run; no magic needed).
 
+### MCP first, then IDE kernel (reuse same process)
+
+If **MCP/CLI already started** a JupyLink kernel and registered it, the IDE can attach to that process instead of starting a second one:
+
+1. On startup, `python -m jupylink` checks whether to **bridge** the IDE’s new connection file to an existing kernel (ZMQ proxy with HMAC re-signing).
+2. **Match rules** (first hit wins after `JUPYLINK_IDE_REUSE` is on):
+   - `JUPYLINK_IDE_CONNECTION_FILE` = path to the **upstream** `kernel-*.json` (e.g. from `jupylink list-kernels`).
+   - Or resolve via registry: set **`JUPYLINK_IDE_NOTEBOOK_PATH`** (or `JUPYTER_NOTEBOOK_PATH`) to the **absolute** `.ipynb` path that MCP uses.
+   - Or `JUPYLINK_IDE_REUSE_UNIQUE=1` when **exactly one** kernel is listed in the registry (single-notebook workflows).
+3. Configure these on the **Jupyter kernel** environment (VS Code: Jupyter env / `.env` for the interpreter), not only on the MCP server.
+4. Disable bridging: `JUPYLINK_IDE_REUSE=0`. Verbose stderr logs: `JUPYLINK_IDE_PROXY_LOG=1`.
+
 ## Execution Flow
 
 - **CLI `execute`** / **MCP `jupylink_execute_cell`**: Tries to connect to existing JupyLink kernel; if none, spawns kernel and keeps it alive for reuse (`independent=True`).
 - **MCP `jupylink_execute_cells`** / **CLI `execute cell1 cell2 ...`**: Runs multiple cells in one call, guaranteeing kernel reuse. Use when cells depend on each other (e.g. def then call).
 - **Kernel registration**: When notebook uses JupyLink and path is set, kernel registers in `~/.jupylink/kernels.json`. CLI/MCP use this to connect.
+- **IDE after MCP (same kernel)**: If MCP already started a kernel for a notebook and it is registered, selecting **JupyLink** in the IDE can **bridge** to that process instead of starting a second one. On startup, `python -m jupylink` checks reuse rules and, if matched, runs a ZMQ proxy that re-signs messages between the IDE’s connection file and the existing kernel. Set `JUPYLINK_IDE_REUSE=0` on the kernel process to force a normal local JupyLink kernel.
+- **Auto-reuse without env (two tiers)**:
+  1. **Registry single (preferred, reliable)** — data is in the same persistent user directory as ``kernels.json`` (e.g. ``~/.jupylink/`` or ``%APPDATA%/jupylink/`` on Windows), **not** under ``/tmp``. If there is **exactly one** live registered kernel, the IDE bridge uses it. No dependency on IDE cwd. Disable with ``JUPYLINK_IDE_REGISTRY_SINGLE=0`` if you often have stray registrations.
+  2. **Workspace sidecar (fallback)** — On register, JupyLink also writes ``{notebook_stem}.jupylink_kernel.json`` next to the ``.ipynb``. The IDE process scans downward from its **cwd** (depth-limited); if **exactly one** valid sidecar appears under that tree, it is used. This is weaker (cwd varies by editor/settings) but helps when multiple kernels are registered and only one notebook has a sidecar. Disable with ``JUPYLINK_IDE_SIDECAR=0``.
+
+  **Why not ``/tmp``?** System temp is cleared on reboot, shared by all users/processes, and not tied to a stable notebook identity without encoding paths in filenames. JupyLink keeps authoritative state next to the user registry (persistent) and optionally beside the ``.ipynb`` (visible, gitignored).
 - **`jupylink record`** / **`jupylink_sync_record`**: Merges ipynb with existing `_record.json`; preserves execution history; writes `_record.py`, `_record.json`, `_record.csv`.
 
 ## Record Format
@@ -257,6 +275,15 @@ Use `list_mcp_resources` / `fetch_mcp_resource` to view record files:
 - `JUPYLINK_REFRESH_USE_URL`: Set to `1` to enable URL-based refresh (default: 0, disabled).
 - `JUPYLINK_REFRESH_DELAY`: Delay in seconds before invoking IDE refresh (default: 0.1). Increase if the IDE file does not update in time.
 - `JUPYLINK_LOCK_TIMEOUT`: File lock timeout in seconds (default: 10). On Windows, filelock has ~1s delay per failed acquisition; reduce for faster failure when contested.
+- **IDE kernel bridge (reuse MCP kernel)** — add these to the **Jupyter kernel environment** (e.g. workspace `.env` loaded by Python/Jupyter, or Cursor/VS Code Jupyter env settings):
+  - `JUPYLINK_IDE_NOTEBOOK_PATH`: Absolute path to the `.ipynb` (must match the notebook MCP uses). Registry lookup then finds the MCP kernel.
+  - `JUPYLINK_IDE_CONNECTION_FILE`: Optional; absolute path to the existing kernel’s `kernel-*.json` (skips registry; use `jupylink list-kernels` to copy).
+  - `JUPYLINK_IDE_REUSE_UNIQUE=1`: If exactly one kernel is registered, bridge to it (use only when a single notebook session is active).
+  - `JUPYLINK_IDE_REUSE=0`: Disable bridging; always start a full in-IDE JupyLink kernel.
+  - `JUPYLINK_IDE_PROXY_LOG=1`: Verbose proxy logging on stderr.
+  - `JUPYLINK_IDE_REGISTRY_SINGLE=0`: Do not auto-pick the sole kernel from ``kernels.json`` (default is on: single registration → bridge).
+  - `JUPYLINK_IDE_SIDECAR=0`: Do not scan for ``*.jupylink_kernel.json`` under cwd.
+  - `JUPYLINK_IDE_SIDECAR_DEPTH`: Max directory depth from cwd for sidecar scan (default `12`).
 
 ## IDE Refresh
 

@@ -202,6 +202,7 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 - **CLI `execute`** / **MCP `jupylink_execute_cell`**: Tries to connect to existing JupyLink kernel; if none, spawns kernel and keeps it alive for reuse (`independent=True`).
 - **MCP `jupylink_execute_cells`** / **CLI `execute cell1 cell2 ...`**: Runs multiple cells in one call, guaranteeing kernel reuse. Use when cells depend on each other (e.g. def then call).
 - **Kernel registration**: When notebook uses JupyLink and path is set, kernel registers in `~/.jupylink/kernels.json`. CLI/MCP use this to connect.
+- **IDE after MCP**: Selecting JupyLink can **bridge** to an MCP-registered kernel. **Auto (reliable)**: if `kernels.json` has **exactly one** live kernel, use it (user data dir, not `/tmp`). **Fallback**: scan cwd for `*.jupylink_kernel.json` beside the notebook. Or set `JUPYLINK_IDE_NOTEBOOK_PATH` / `JUPYLINK_IDE_CONNECTION_FILE`. Disable with `JUPYLINK_IDE_REUSE=0`. Details: `.cursor/skills/jupylink/SKILL.md`.
 - **`jupylink record`** / **`jupylink_sync_record`**: Merges ipynb with existing `_record.json`; preserves execution history.
 
 ## Record Format

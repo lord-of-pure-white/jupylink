@@ -7,6 +7,23 @@ from pathlib import Path
 
 import nbformat
 import pytest
+
+from jupylink import kernel_registry as _kr
+
+
+def _make_registry_path_fn(reg: Path):
+    def _fn() -> Path:
+        return reg
+
+    return _fn
+
+
+@pytest.fixture
+def isolated_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point ``kernel_registry._registry_path`` at a temp ``kernels.json``."""
+    reg = tmp_path / "kernels.json"
+    monkeypatch.setattr(_kr, "_registry_path", _make_registry_path_fn(reg))
+    return reg
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 
