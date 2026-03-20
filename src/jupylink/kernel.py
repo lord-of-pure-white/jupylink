@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import atexit
 import hashlib
 import logging
@@ -240,7 +241,10 @@ class JupyLinkKernel(IPythonKernel):
             captured = self._stop_capture()
         if reply is not None:
             self._register_for_cli()  # ensure registered when we have notebook_path
-            self._record_execution(code, reply, cell_id, cell_meta, captured)
+            # Disk + filelock off the asyncio loop so "Run All" / queued executes stay responsive.
+            await asyncio.to_thread(
+                self._record_execution, code, reply, cell_id, cell_meta, captured
+            )
         return reply
 
     def _record_execution(

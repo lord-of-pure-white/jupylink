@@ -277,6 +277,9 @@ def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
 
     logger.info("IDE bridge: listening on %s; upstream %s", frontend_cf, existing_cf)
 
+    # Real ipykernel exits after forwarding shutdown_reply; we must too or Cursor restart hangs.
+    exit_after_shutdown_reply = False
+
     def drain_iopub() -> None:
         while True:
             try:
@@ -360,6 +363,9 @@ def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
                             continue
                         idents_f = control_pending.popleft()
                         session_b.send(b_control, msg, ident=idents_f)
+                        if msg.get("header", {}).get("msg_type") == "shutdown_reply":
+                            exit_after_shutdown_reply = True
+                            break
                 except zmq.Again:
                     pass
                 except Exception:
@@ -407,6 +413,10 @@ def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
             except Exception:
                 pass
         ctx.term()
+
+    if exit_after_shutdown_reply:
+        logger.info("IDE bridge exiting after shutdown_reply (kernel restart/shutdown).")
+        sys.exit(0)
 
 
 def maybe_run_ide_proxy_from_argv(argv: list[str] | None = None) -> bool:
