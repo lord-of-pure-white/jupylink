@@ -1,0 +1,900 @@
+{
+  "notebook_path": "E:\\projects\\jupytest\\123.ipynb",
+  "execution_log": [
+    {
+      "cell_id": "00e7c89d",
+      "status": "ok"
+    },
+    {
+      "cell_id": "03f0303c",
+      "status": "ok"
+    },
+    {
+      "cell_id": "b5ac5aed",
+      "status": "ok"
+    },
+    {
+      "cell_id": "7cd72a6e",
+      "status": "ok"
+    },
+    {
+      "cell_id": "ecf03c06",
+      "status": "ok"
+    },
+    {
+      "cell_id": "bbbdad69",
+      "status": "ok"
+    },
+    {
+      "cell_id": "3af401b9",
+      "status": "ok"
+    },
+    {
+      "cell_id": "66cc86e0",
+      "status": "ok"
+    },
+    {
+      "cell_id": "a1a298ee",
+      "status": "ok"
+    },
+    {
+      "cell_id": "cb417dda",
+      "status": "ok"
+    },
+    {
+      "cell_id": "82b1c629",
+      "status": "ok"
+    },
+    {
+      "cell_id": "d6af4ea1",
+      "status": "ok"
+    },
+    {
+      "cell_id": "acc577ca",
+      "status": "ok"
+    },
+    {
+      "cell_id": "e4b0873a",
+      "status": "ok"
+    },
+    {
+      "cell_id": "84ee349e",
+      "status": "ok"
+    },
+    {
+      "cell_id": "28db1bab",
+      "status": "ok"
+    },
+    {
+      "cell_id": "211c9d5b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "20662279",
+      "status": "ok"
+    },
+    {
+      "cell_id": "2c9432d3",
+      "status": "ok"
+    },
+    {
+      "cell_id": "4f1a63bd",
+      "status": "ok"
+    },
+    {
+      "cell_id": "c650e10a",
+      "status": "ok"
+    },
+    {
+      "cell_id": "54c6df2f",
+      "status": "ok"
+    },
+    {
+      "cell_id": "4dd3edfd",
+      "status": "ok"
+    },
+    {
+      "cell_id": "31949800",
+      "status": "ok"
+    },
+    {
+      "cell_id": "a96adc60",
+      "status": "ok"
+    },
+    {
+      "cell_id": "8d2050f4",
+      "status": "ok"
+    },
+    {
+      "cell_id": "603723d2",
+      "status": "ok"
+    },
+    {
+      "cell_id": "c10ab206",
+      "status": "ok"
+    },
+    {
+      "cell_id": "cf77b08e",
+      "status": "ok"
+    },
+    {
+      "cell_id": "c4e67f74",
+      "status": "ok"
+    },
+    {
+      "cell_id": "fd6d7395",
+      "status": "ok"
+    },
+    {
+      "cell_id": "1560bd7d",
+      "status": "ok"
+    },
+    {
+      "cell_id": "64ae804f",
+      "status": "ok"
+    },
+    {
+      "cell_id": "74722c79",
+      "status": "ok"
+    },
+    {
+      "cell_id": "2024c766",
+      "status": "ok"
+    },
+    {
+      "cell_id": "741830c2",
+      "status": "ok"
+    },
+    {
+      "cell_id": "4dfcac8f",
+      "status": "ok"
+    },
+    {
+      "cell_id": "b359ffc7",
+      "status": "ok"
+    },
+    {
+      "cell_id": "a8089a73",
+      "status": "ok"
+    },
+    {
+      "cell_id": "2a387c88",
+      "status": "ok"
+    },
+    {
+      "cell_id": "edec36d2",
+      "status": "ok"
+    },
+    {
+      "cell_id": "83c3dbf7",
+      "status": "ok"
+    },
+    {
+      "cell_id": "46597831",
+      "status": "ok"
+    },
+    {
+      "cell_id": "8071f6c7",
+      "status": "ok"
+    },
+    {
+      "cell_id": "0fae7383",
+      "status": "ok"
+    },
+    {
+      "cell_id": "378fca5b",
+      "status": "ok"
+    },
+    {
+      "cell_id": "a42cc0b7",
+      "status": "ok"
+    },
+    {
+      "cell_id": "e10258f4",
+      "status": "ok"
+    },
+    {
+      "cell_id": "c0b9dc93",
+      "status": "ok"
+    },
+    {
+      "cell_id": "01933717",
+      "status": "ok"
+    },
+    {
+      "cell_id": "8cd626bb",
+      "status": "ok"
+    },
+    {
+      "cell_id": "47c953d7",
+      "status": "ok"
+    }
+  ],
+  "cells": [
+    {
+      "id": "00e7c89d",
+      "cell_id": "00e7c89d",
+      "code": "import os\nimport csv\n\ndesktop = os.path.join(os.environ[\"USERPROFILE\"], \"Desktop\")\ncsv_path = os.path.join(desktop, \"sample_data.csv\")\n\nwith open(csv_path, \"w\", newline=\"\", encoding=\"utf-8\") as f:\n    writer = csv.writer(f)\n    writer.writerow([\"name\", \"age\", \"city\"])\n    writer.writerow([\"Alice\", 28, \"Beijing\"])\n    writer.writerow([\"Bob\", 32, \"Shanghai\"])\n    writer.writerow([\"Charlie\", 25, \"Guangzhou\"])\n\nprint(f\"已生成示例 CSV: {csv_path}\")",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "已生成示例 CSV: C:\\Users\\Administrator\\Desktop\\sample_data.csv\n"
+        }
+      ],
+      "execution_count": 1,
+      "exec_order": 1
+    },
+    {
+      "id": "03f0303c",
+      "cell_id": "03f0303c",
+      "code": "import pandas as pd\n\ndf = pd.read_csv(csv_path)\nprint(df)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "      name  age       city\n0    Alice   28    Beijing\n1      Bob   32   Shanghai\n2  Charlie   25  Guangzhou\n"
+        }
+      ],
+      "execution_count": 2,
+      "exec_order": 2
+    },
+    {
+      "id": "b5ac5aed",
+      "cell_id": "b5ac5aed",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 3,
+      "exec_order": 3
+    },
+    {
+      "id": "7cd72a6e",
+      "cell_id": "7cd72a6e",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 4,
+      "exec_order": 4
+    },
+    {
+      "id": "ecf03c06",
+      "cell_id": "ecf03c06",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 5,
+      "exec_order": 5
+    },
+    {
+      "id": "bbbdad69",
+      "cell_id": "bbbdad69",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 6,
+      "exec_order": 6
+    },
+    {
+      "id": "3af401b9",
+      "cell_id": "3af401b9",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 7,
+      "exec_order": 7
+    },
+    {
+      "id": "66cc86e0",
+      "cell_id": "66cc86e0",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 8,
+      "exec_order": 8
+    },
+    {
+      "id": "a1a298ee",
+      "cell_id": "a1a298ee",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 9,
+      "exec_order": 9
+    },
+    {
+      "id": "cb417dda",
+      "cell_id": "cb417dda",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 10,
+      "exec_order": 10
+    },
+    {
+      "id": "82b1c629",
+      "cell_id": "82b1c629",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 11,
+      "exec_order": 11
+    },
+    {
+      "id": "d6af4ea1",
+      "cell_id": "d6af4ea1",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 12,
+      "exec_order": 12
+    },
+    {
+      "id": "acc577ca",
+      "cell_id": "acc577ca",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 13,
+      "exec_order": 13
+    },
+    {
+      "id": "e4b0873a",
+      "cell_id": "e4b0873a",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 14,
+      "exec_order": 14
+    },
+    {
+      "id": "84ee349e",
+      "cell_id": "84ee349e",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 15,
+      "exec_order": 15
+    },
+    {
+      "id": "28db1bab",
+      "cell_id": "28db1bab",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 16,
+      "exec_order": 16
+    },
+    {
+      "id": "211c9d5b",
+      "cell_id": "211c9d5b",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 17,
+      "exec_order": 17
+    },
+    {
+      "id": "20662279",
+      "cell_id": "20662279",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 18,
+      "exec_order": 18
+    },
+    {
+      "id": "2c9432d3",
+      "cell_id": "2c9432d3",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 19,
+      "exec_order": 19
+    },
+    {
+      "id": "4f1a63bd",
+      "cell_id": "4f1a63bd",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 20,
+      "exec_order": 20
+    },
+    {
+      "id": "c650e10a",
+      "cell_id": "c650e10a",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 21,
+      "exec_order": 21
+    },
+    {
+      "id": "54c6df2f",
+      "cell_id": "54c6df2f",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 22,
+      "exec_order": 22
+    },
+    {
+      "id": "4dd3edfd",
+      "cell_id": "4dd3edfd",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 23,
+      "exec_order": 23
+    },
+    {
+      "id": "31949800",
+      "cell_id": "31949800",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 24,
+      "exec_order": 24
+    },
+    {
+      "id": "a96adc60",
+      "cell_id": "a96adc60",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 25,
+      "exec_order": 25
+    },
+    {
+      "id": "8d2050f4",
+      "cell_id": "8d2050f4",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 26,
+      "exec_order": 26
+    },
+    {
+      "id": "603723d2",
+      "cell_id": "603723d2",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 27,
+      "exec_order": 27
+    },
+    {
+      "id": "c10ab206",
+      "cell_id": "c10ab206",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 28,
+      "exec_order": 28
+    },
+    {
+      "id": "cf77b08e",
+      "cell_id": "cf77b08e",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 29,
+      "exec_order": 29
+    },
+    {
+      "id": "c4e67f74",
+      "cell_id": "c4e67f74",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 30,
+      "exec_order": 30
+    },
+    {
+      "id": "fd6d7395",
+      "cell_id": "fd6d7395",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 31,
+      "exec_order": 31
+    },
+    {
+      "id": "1560bd7d",
+      "cell_id": "1560bd7d",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 32,
+      "exec_order": 32
+    },
+    {
+      "id": "64ae804f",
+      "cell_id": "64ae804f",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 33,
+      "exec_order": 33
+    },
+    {
+      "id": "74722c79",
+      "cell_id": "74722c79",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 34,
+      "exec_order": 34
+    },
+    {
+      "id": "2024c766",
+      "cell_id": "2024c766",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 35,
+      "exec_order": 35
+    },
+    {
+      "id": "741830c2",
+      "cell_id": "741830c2",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 36,
+      "exec_order": 36
+    },
+    {
+      "id": "4dfcac8f",
+      "cell_id": "4dfcac8f",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 37,
+      "exec_order": 37
+    },
+    {
+      "id": "b359ffc7",
+      "cell_id": "b359ffc7",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 38,
+      "exec_order": 38
+    },
+    {
+      "id": "a8089a73",
+      "cell_id": "a8089a73",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 39,
+      "exec_order": 39
+    },
+    {
+      "id": "2a387c88",
+      "cell_id": "2a387c88",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 40,
+      "exec_order": 40
+    },
+    {
+      "id": "edec36d2",
+      "cell_id": "edec36d2",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 41,
+      "exec_order": 41
+    },
+    {
+      "id": "83c3dbf7",
+      "cell_id": "83c3dbf7",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 42,
+      "exec_order": 42
+    },
+    {
+      "id": "46597831",
+      "cell_id": "46597831",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 43,
+      "exec_order": 43
+    },
+    {
+      "id": "8071f6c7",
+      "cell_id": "8071f6c7",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 44,
+      "exec_order": 44
+    },
+    {
+      "id": "0fae7383",
+      "cell_id": "0fae7383",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 45,
+      "exec_order": 45
+    },
+    {
+      "id": "378fca5b",
+      "cell_id": "378fca5b",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 46,
+      "exec_order": 46
+    },
+    {
+      "id": "a42cc0b7",
+      "cell_id": "a42cc0b7",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 47,
+      "exec_order": 47
+    },
+    {
+      "id": "e10258f4",
+      "cell_id": "e10258f4",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 48,
+      "exec_order": 48
+    },
+    {
+      "id": "c0b9dc93",
+      "cell_id": "c0b9dc93",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 49,
+      "exec_order": 49
+    },
+    {
+      "id": "01933717",
+      "cell_id": "01933717",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 50,
+      "exec_order": 50
+    },
+    {
+      "id": "8cd626bb",
+      "cell_id": "8cd626bb",
+      "code": "x = 42",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 51,
+      "exec_order": 51
+    },
+    {
+      "id": "47c953d7",
+      "cell_id": "47c953d7",
+      "code": "print(x)",
+      "status": "ok",
+      "editable": false,
+      "output": [
+        {
+          "msg_type": "stream",
+          "name": "stdout",
+          "text": "42\n"
+        }
+      ],
+      "execution_count": 52,
+      "exec_order": 52
+    },
+    {
+      "id": "54888b87",
+      "code": "import os\n\ndesktop = os.path.join(os.environ[\"USERPROFILE\"], \"Desktop\")\ncsv_path = os.path.join(desktop, \"sample_data.csv\")\nif os.path.exists(csv_path):\n    os.remove(csv_path)\n    print(f\"已删除: {csv_path}\")\nelse:\n    print(f\"文件不存在: {csv_path}\")",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "ed699ca4",
+      "code": "import os\nimport csv\n\ndesktop = os.path.join(os.environ[\"USERPROFILE\"], \"Desktop\")\ncsv_path = os.path.join(desktop, \"sample_data2.csv\")\n\nwith open(csv_path, \"w\", newline=\"\", encoding=\"utf-8\") as f:\n    writer = csv.writer(f)\n    writer.writerow([\"product\", \"price\", \"stock\"])\n    writer.writerow([\"Apple\", 5.5, 100])\n    writer.writerow([\"Banana\", 3.2, 80])\n    writer.writerow([\"Orange\", 4.0, 60])\n\nprint(f\"已生成示例 CSV: {csv_path}\")",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "4ada0f93",
+      "code": "import pandas as pd\n\ndf = pd.read_csv(csv_path)\nprint(df)",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "d93b0a95",
+      "code": "with open(\"1.txt\", \"r\", encoding=\"utf-8\") as f:\n    print(f.read())",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "4fcdf460",
+      "code": "import os\n\ndesktop = os.path.join(os.environ[\"USERPROFILE\"], \"Desktop\")\ncsv_path = os.path.join(desktop, \"sample_data2.csv\")\nif os.path.exists(csv_path):\n    os.remove(csv_path)\n    print(f\"已删除: {csv_path}\")\nelse:\n    print(f\"文件不存在: {csv_path}\")",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "16a7a8c2",
+      "code": "print(\"你好\")",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "782792d7",
+      "code": "print('hello world')",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "b079c51f",
+      "code": "1/0",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    },
+    {
+      "id": "3cb7c3e8",
+      "code": "",
+      "cell_type": "code",
+      "status": "empty",
+      "editable": true
+    }
+  ]
+}

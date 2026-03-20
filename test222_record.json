@@ -1,0 +1,27 @@
+{
+  "notebook_path": "E:\\projects\\jupytest\\test222.ipynb",
+  "execution_log": [
+    {
+      "cell_id": "vscode-notebook-cell:/e%3A/projects/jupytest/test222.ipynb#W1sZmlsZQ%3D%3D",
+      "status": "ok"
+    }
+  ],
+  "cells": [
+    {
+      "id": "vscode-notebook-cell:/e%3A/projects/jupytest/test222.ipynb#W1sZmlsZQ%3D%3D",
+      "cell_id": "vscode-notebook-cell:/e%3A/projects/jupytest/test222.ipynb#W1sZmlsZQ%3D%3D",
+      "code": "print(1)",
+      "status": "ok",
+      "editable": false,
+      "execution_count": 1,
+      "exec_order": 1
+    },
+    {
+      "id": "a26b9da8",
+      "code": "import os\n\ndesktop = os.path.join(os.environ[\"USERPROFILE\"], \"Desktop\")\nimage_extensions = {\".jpg\", \".jpeg\", \".png\", \".gif\", \".bmp\", \".webp\", \".ico\", \".tiff\", \".tif\", \".svg\"}\n\ndeleted = []\nfor f in os.listdir(desktop):\n    path = os.path.join(desktop, f)\n    if os.path.isfile(path) and os.path.splitext(f)[1].lower() in image_extensions:\n        os.remove(path)\n        deleted.append(f)\n\nprint(f\"已删除 {len(deleted)} 个图片:\", deleted)",
+      "cell_type": "code",
+      "status": "pending",
+      "editable": true
+    }
+  ]
+}
