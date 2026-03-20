@@ -12,7 +12,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .executor import execute_cell, execute_cells
 from .ipynb_ops import create_cell, delete_cell, get_cell_source, list_cells, write_cell
-from .kernel_registry import list_kernels
+from .kernel_registry import list_kernels, resolve_notebook_filesystem_path
 from .record_manager import RecordManager
 
 mcp = FastMCP("JupyLink", json_response=True)
@@ -29,17 +29,23 @@ def _active_notebook_from_env_or_file() -> Path | None:
     """Optional notebook path for agents/IDE integration (not known to MCP protocol natively)."""
     p = os.environ.get("JUPYLINK_ACTIVE_NOTEBOOK", "").strip()
     if p:
-        exp = Path(p).expanduser()
-        if exp.is_file() and exp.suffix.lower() == ".ipynb":
-            return exp.resolve()
+        try:
+            exp = resolve_notebook_filesystem_path(p)
+            if exp.is_file() and exp.suffix.lower() == ".ipynb":
+                return exp
+        except (OSError, ValueError):
+            pass
     fp = os.environ.get("JUPYLINK_ACTIVE_NOTEBOOK_FILE", "").strip()
     if fp:
         try:
             line = Path(fp).expanduser().read_text(encoding="utf-8").splitlines()[0].strip()
             if line.endswith(".ipynb"):
-                exp = Path(line).expanduser()
-                if exp.is_file():
-                    return exp.resolve()
+                try:
+                    exp = resolve_notebook_filesystem_path(line)
+                    if exp.is_file():
+                        return exp
+                except (OSError, ValueError):
+                    pass
         except OSError:
             pass
     for rel in (Path(".jupylink") / "active_notebook", Path("jupylink-active-notebook")):
@@ -48,9 +54,12 @@ def _active_notebook_from_env_or_file() -> Path | None:
             if cand.is_file():
                 line = cand.read_text(encoding="utf-8").splitlines()[0].strip()
                 if line.endswith(".ipynb"):
-                    exp = Path(line).expanduser()
-                    if exp.is_file():
-                        return exp.resolve()
+                    try:
+                        exp = resolve_notebook_filesystem_path(line)
+                        if exp.is_file():
+                            return exp
+                    except (OSError, ValueError):
+                        pass
         except OSError:
             pass
     return None
@@ -66,7 +75,7 @@ def _effective_default_notebook() -> Path | None:
 def _get_notebook_path(notebook_path: str | None) -> Path:
     """Resolve notebook path: use arg, else bound default, else active hint, else raise."""
     if notebook_path and str(notebook_path).strip():
-        return Path(notebook_path).resolve()
+        return resolve_notebook_filesystem_path(notebook_path)
     eff = _effective_default_notebook()
     if eff is not None:
         return eff
@@ -384,10 +393,16 @@ def run_mcp_server(port: int = 0, notebook_path: str | None = None) -> None:
 
     global _bound_notebook
     if notebook_path and str(notebook_path).strip():
-        _bound_notebook = Path(notebook_path).resolve()
+        _bound_notebook = resolve_notebook_filesystem_path(notebook_path)
     else:
         env_path = os.environ.get("JUPYLINK_DEFAULT_NOTEBOOK", "").strip()
-        _bound_notebook = Path(env_path).resolve() if env_path else None
+        if env_path:
+            try:
+                _bound_notebook = resolve_notebook_filesystem_path(env_path)
+            except (OSError, ValueError):
+                _bound_notebook = None
+        else:
+            _bound_notebook = None
 
     print("JupyLink MCP server starting (stdio mode)...", file=sys.stderr)
     eff = _effective_default_notebook()

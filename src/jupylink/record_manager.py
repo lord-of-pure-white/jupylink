@@ -12,6 +12,7 @@ from typing import Any
 import nbformat
 
 from .file_lock import notebook_lock
+from .kernel_registry import resolve_notebook_filesystem_path
 
 logger = logging.getLogger(__name__)
 
@@ -68,13 +69,15 @@ class RecordManager:
     """Manages execution record, merges kernel results with ipynb, writes output files."""
 
     def __init__(self, notebook_path: str | Path | None = None):
-        self.notebook_path = Path(notebook_path) if notebook_path else None
+        self.notebook_path = (
+            resolve_notebook_filesystem_path(notebook_path) if notebook_path else None
+        )
         self._execution_records: list[dict[str, Any]] = []  # each execution in order (repeats kept)
         self._execution_log: list[dict[str, str]] = []  # ordered execution timeline
 
     def set_notebook_path(self, path: str | Path) -> None:
         """Set the notebook path (from magic or env)."""
-        self.notebook_path = Path(path).resolve()
+        self.notebook_path = resolve_notebook_filesystem_path(path)
 
     def load_from_record_file(self) -> bool:
         """Load execution data from existing record JSON. Returns True if loaded."""
@@ -290,7 +293,7 @@ class RecordManager:
         Falls back to ipynb when record has no output (e.g. cell run in IDE, kernel
         didn't capture output). Returns a list of output message dicts, or None if not found.
         """
-        path = Path(notebook_path).resolve()
+        path = resolve_notebook_filesystem_path(notebook_path)
         json_path = path.parent / f"{path.stem}_record.json"
         if json_path.exists():
             try:
@@ -335,7 +338,7 @@ class RecordManager:
         Kernel may not capture stream output (sent via session.send); CLI has it.
         Returns True if updated.
         """
-        path = Path(notebook_path).resolve()
+        path = resolve_notebook_filesystem_path(notebook_path)
         json_path = path.parent / f"{path.stem}_record.json"
         if not json_path.exists():
             return False
@@ -367,7 +370,7 @@ class RecordManager:
         Call after CLI/MCP execute so get_record/get_status reflect execution immediately.
         Fixes desync when kernel didn't record (e.g. non-JupyLink kernel, or race).
         """
-        path = Path(notebook_path).resolve()
+        path = resolve_notebook_filesystem_path(notebook_path)
         if not path.exists() or path.suffix != ".ipynb":
             return
         rm = RecordManager(path)

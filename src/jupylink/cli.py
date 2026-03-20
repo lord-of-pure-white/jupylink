@@ -11,7 +11,7 @@ from pathlib import Path
 import typer
 
 from .ipynb_ops import create_cell, delete_cell, get_cell_source, list_cells, write_cell
-from .kernel_registry import cleanup_stale, list_kernels
+from .kernel_registry import cleanup_stale, list_kernels, resolve_notebook_filesystem_path
 from .notify_ide import request_notebook_refresh, set_refresh_disabled
 from .record_manager import RecordManager
 
@@ -19,7 +19,7 @@ app = typer.Typer(help="JupyLink - Jupyter kernel proxy and CLI for agent-friend
 
 
 def _resolve_notebook(path: str) -> Path:
-    p = Path(path).resolve()
+    p = resolve_notebook_filesystem_path(path)
     if not p.exists():
         raise typer.BadParameter(f"Notebook not found: {path}")
     if p.suffix != ".ipynb":

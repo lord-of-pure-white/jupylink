@@ -11,6 +11,7 @@ from nbformat.notebooknode import from_dict
 from nbformat.v4 import nbbase
 
 from .file_lock import notebook_lock
+from .kernel_registry import resolve_notebook_filesystem_path
 from .notify_ide import request_notebook_refresh
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def write_cell(notebook_path: str | Path, cell_id: str, content: str) -> bool:
 
     Returns True on success, False if cell not found.
     """
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return False
     with notebook_lock(path):
@@ -73,7 +74,7 @@ def create_cell(
 
     Returns the new cell's id on success, None on failure.
     """
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return None
     with notebook_lock(path):
@@ -105,7 +106,7 @@ def delete_cell(notebook_path: str | Path, cell_id: str) -> bool:
 
     Returns True on success, False if cell not found.
     """
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return False
     with notebook_lock(path):
@@ -121,7 +122,7 @@ def delete_cell(notebook_path: str | Path, cell_id: str) -> bool:
 
 def get_cell_source(notebook_path: str | Path, cell_id: str) -> str | None:
     """Get the source of a cell by cell_id. Returns None if not found."""
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return None
     try:
@@ -174,7 +175,7 @@ def update_cell_output(
 
     Returns True on success. Used when CLI/MCP executes a cell.
     """
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists() or path.suffix != ".ipynb":
         return False
     with notebook_lock(path):
@@ -193,7 +194,7 @@ def update_cell_output(
 
 def list_cells(notebook_path: str | Path) -> list[dict]:
     """List all cells with id, cell_type, source preview, and empty flag."""
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return []
     try:

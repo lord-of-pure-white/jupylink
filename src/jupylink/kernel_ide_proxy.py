@@ -95,6 +95,8 @@ def _url(cfg: dict[str, Any], port_key: str) -> str:
 
 def _explicit_ide_notebook_file() -> Path | None:
     """Notebook path from IDE/Jupyter env (not ``JUPYLINK_IDE_REUSE_UNIQUE``)."""
+    from .kernel_registry import resolve_notebook_filesystem_path
+
     for key in (
         "JUPYLINK_IDE_NOTEBOOK_PATH",
         "JUPYTER_NOTEBOOK_PATH",
@@ -103,24 +105,35 @@ def _explicit_ide_notebook_file() -> Path | None:
     ):
         v = os.environ.get(key, "").strip()
         if v.endswith(".ipynb"):
-            p = Path(v).expanduser()
-            if p.is_file():
-                return p.resolve()
+            try:
+                p = resolve_notebook_filesystem_path(v)
+                if p.is_file():
+                    return p
+            except (OSError, ValueError):
+                pass
     return None
 
 
 def _ide_notebook_path_for_reuse() -> Path | None:
+    from .kernel_registry import resolve_notebook_filesystem_path
+
     for key in ("JUPYLINK_IDE_NOTEBOOK_PATH", "JUPYTER_NOTEBOOK_PATH"):
         v = os.environ.get(key, "").strip()
         if v.endswith(".ipynb"):
-            p = Path(v).expanduser()
-            if p.is_file():
-                return p.resolve()
+            try:
+                p = resolve_notebook_filesystem_path(v)
+                if p.is_file():
+                    return p
+            except (OSError, ValueError):
+                pass
     sn = os.environ.get("JPY_SESSION_NAME", "").strip()
     if sn.endswith(".ipynb"):
-        p = Path(sn).expanduser()
-        if p.is_file():
-            return p.resolve()
+        try:
+            p = resolve_notebook_filesystem_path(sn)
+            if p.is_file():
+                return p
+        except (OSError, ValueError):
+            pass
     if os.environ.get("JUPYLINK_IDE_REUSE_UNIQUE", "").lower() in ("1", "true", "yes"):
         from .kernel_registry import list_kernels
 

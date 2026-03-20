@@ -15,7 +15,7 @@ from typing import Any
 
 from ipykernel.ipkernel import IPythonKernel
 
-from .kernel_registry import register, unregister
+from .kernel_registry import register, resolve_notebook_filesystem_path, unregister
 from .magics import JupyLinkMagics
 from .record_manager import RecordManager, _is_ide_injected_code
 
@@ -32,14 +32,20 @@ def _notebook_path_from_env_or_argv() -> str | None:
     ):
         raw = os.environ.get(key, "").strip()
         if raw.endswith(".ipynb"):
-            p = Path(raw).expanduser()
-            if p.is_file():
-                return str(p.resolve())
+            try:
+                p = resolve_notebook_filesystem_path(raw)
+                if p.is_file():
+                    return str(p)
+            except (OSError, ValueError):
+                pass
     for arg in sys.argv:
         if isinstance(arg, str) and arg.lower().endswith(".ipynb"):
-            p = Path(arg).expanduser()
-            if p.is_file():
-                return str(p.resolve())
+            try:
+                p = resolve_notebook_filesystem_path(arg)
+                if p.is_file():
+                    return str(p)
+            except (OSError, ValueError):
+                pass
     return None
 
 

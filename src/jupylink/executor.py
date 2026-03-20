@@ -12,7 +12,14 @@ from jupyter_client.blocking import BlockingKernelClient
 from jupyter_client.manager import start_new_kernel
 
 from .ipynb_ops import get_cell_source, update_cell_output as update_ipynb_output
-from .kernel_registry import cleanup_stale, get_connection_file, register, spawn_lock, unregister
+from .kernel_registry import (
+    cleanup_stale,
+    get_connection_file,
+    register,
+    resolve_notebook_filesystem_path,
+    spawn_lock,
+    unregister,
+)
 from .notify_ide import request_notebook_refresh
 from .record_manager import RecordManager
 
@@ -200,7 +207,7 @@ def execute_cell(notebook_path: str | Path, cell_id: str) -> dict[str, Any] | No
     If none is registered, spawns a new kernel and keeps it alive for reuse.
     """
     cleanup_stale()  # remove entries whose connection files are gone
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return None
 
@@ -245,7 +252,7 @@ def execute_cells(
     Returns a list of results (one per cell). Use this when cells depend on each other.
     """
     cleanup_stale()  # remove entries whose connection files are gone
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return []
 

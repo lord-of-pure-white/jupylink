@@ -32,6 +32,25 @@ def test_strip_vscode_remote_ssh_uri():
     assert _strip_vscode_remote_filesystem_path(uri) == plain
 
 
+def test_resolve_notebook_filesystem_path_strips_ssh_prefix(tmp_path):
+    """Strip + resolve must point at the same file as the real notebook."""
+    from jupylink.kernel_registry import resolve_notebook_filesystem_path
+
+    nb = tmp_path / "n.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    hex_cfg = "7b22686f73744e616d65223a223137322e31362e31392e35227d"
+    posix = nb.resolve().as_posix()
+    # Linux Remote-SSH path shape; on Windows use vscode-remote URI (same strip logic).
+    if os.name == "nt":
+        uri = f"vscode-remote://ssh-remote+{hex_cfg}/{posix.lstrip('/')}"
+        got = resolve_notebook_filesystem_path(uri)
+    else:
+        embedded = f"/ssh-remote+{hex_cfg}{posix}"
+        got = resolve_notebook_filesystem_path(embedded)
+    assert got.exists()
+    assert os.path.samefile(got, nb)
+
+
 def test_register_ssh_embedded_lookup_plain(isolated_registry, tmp_path):
     nb = tmp_path / "n.ipynb"
     nb.write_text("{}", encoding="utf-8")

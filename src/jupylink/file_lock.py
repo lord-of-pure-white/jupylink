@@ -17,6 +17,8 @@ from typing import Iterator
 
 from filelock import FileLock
 
+from .kernel_registry import resolve_notebook_filesystem_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +37,7 @@ def notebook_lock(notebook_path: str | Path, timeout: float | None = None) -> It
     Lock file is placed next to the notebook as .{stem}.lock.
     Covers both .ipynb and _record.json writes.
     """
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     lock_path = path.parent / f".{path.stem}.lock"
     tout = timeout if timeout is not None else _get_lock_timeout()
     lock = FileLock(lock_path, timeout=tout)

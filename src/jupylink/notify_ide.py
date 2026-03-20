@@ -9,6 +9,8 @@ import sys
 import threading
 from pathlib import Path
 
+from .kernel_registry import resolve_notebook_filesystem_path
+
 logger = logging.getLogger(__name__)
 
 def _get_refresh_delay() -> float:
@@ -252,7 +254,7 @@ def request_notebook_refresh(notebook_path: str | Path) -> bool:
     if os.environ.get("JUPYLINK_REFRESH_SKIP_REMOTE", "").lower() in ("1", "true", "yes"):
         logger.debug("Skip refresh: JUPYLINK_REFRESH_SKIP_REMOTE is set")
         return False
-    path = Path(notebook_path).resolve()
+    path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists() or path.suffix != ".ipynb":
         return False
     if _is_temp_path(path):

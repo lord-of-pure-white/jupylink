@@ -104,6 +104,22 @@ def _fix_windows_drive_relative(p: str) -> str:
     return p
 
 
+def resolve_notebook_filesystem_path(path: str | Path) -> Path:
+    """On-disk path for locks, ipynb, and ``_record.*`` next to the notebook.
+
+    VS Code / Jupyter on Remote SSH may pass paths like
+    ``/ssh-remote+<json>/share/home/user/x.ipynb`` or ``vscode-remote://...``.
+    Those are not valid ``Path.parent`` segments on the remote filesystem; strip
+    the pseudo-prefix before ``resolve()`` so ``mkdir`` / lock files work.
+    """
+    raw = str(path).strip()
+    if not raw:
+        raise ValueError("Empty notebook path")
+    stripped = _strip_vscode_remote_filesystem_path(raw)
+    stripped = _fix_windows_drive_relative(stripped)
+    return Path(stripped).expanduser().resolve()
+
+
 def _normalize(path: str | Path) -> str:
     """Normalize notebook path for consistent lookup.
 
