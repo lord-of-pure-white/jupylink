@@ -13,6 +13,12 @@ from jupylink import kernel_ide_proxy as kip
 from jupylink import kernel_registry as kr
 
 
+@pytest.fixture(autouse=True)
+def _ide_bridge_probe_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests use fake connection JSON; skip real ZMQ heartbeat probes."""
+    monkeypatch.setattr(kip, "probe_kernel_connection_file", lambda path, timeout=0.6: True)
+
+
 def test_parse_connection_file_from_argv() -> None:
     assert kip.parse_connection_file_from_argv(["-m", "jupylink", "-f", "/tmp/x.json"]) == "/tmp/x.json"
     assert kip.parse_connection_file_from_argv(["--f=/a b.json"]) == "/a b.json"
@@ -47,6 +53,28 @@ def test_discover_via_single_workspace_sidecar(tmp_path, monkeypatch) -> None:
     assert got == str(cf.resolve())
 
 
+def test_sidecar_via_explicit_notebook_env_not_cwd(tmp_path, monkeypatch) -> None:
+    """Hinted notebook picks sidecar next to ipynb even when cwd is elsewhere."""
+    monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
+    monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE", "0")
+    sub = tmp_path / "nested" / "deep"
+    sub.mkdir(parents=True)
+    monkeypatch.chdir(sub)
+    nb = tmp_path / "book.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    cf = tmp_path / "real-kernel.json"
+    cf.write_text("{}", encoding="utf-8")
+    fe = tmp_path / "ide.json"
+    fe.write_text("{}", encoding="utf-8")
+    (tmp_path / "book.jupylink_kernel.json").write_text(
+        json.dumps({"connection_file": str(cf.resolve()), "notebook_path": str(nb.resolve())}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("JUPYTER_NOTEBOOK_PATH", str(nb.resolve()))
+    assert kip.discover_connection_via_workspace_sidecars(fe.resolve()) == str(cf.resolve())
+    monkeypatch.delenv("JUPYTER_NOTEBOOK_PATH", raising=False)
+
+
 def test_discover_ambiguous_two_sidecars(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE", "0")
     monkeypatch.chdir(tmp_path)
@@ -74,6 +102,25 @@ def test_resolve_via_registry(isolated_registry, tmp_path, monkeypatch) -> None:
     kr.register(nb, str(cf))
     got = kip.resolve_existing_connection_for_ide(str(fe))
     assert got == str(cf.resolve())
+
+
+def test_registry_single_skips_when_env_notebook_differs(
+    isolated_registry, tmp_path, monkeypatch
+) -> None:
+    """Single registry entry must not bridge if env points at a different notebook."""
+    monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
+    nb_a = tmp_path / "a.ipynb"
+    nb_b = tmp_path / "b.ipynb"
+    nb_a.write_text("{}", encoding="utf-8")
+    nb_b.write_text("{}", encoding="utf-8")
+    cf = tmp_path / "k.json"
+    cf.write_text("{}", encoding="utf-8")
+    fe = tmp_path / "front.json"
+    fe.write_text("{}", encoding="utf-8")
+    kr.register(nb_a, str(cf))
+    monkeypatch.setenv("JUPYTER_NOTEBOOK_PATH", str(nb_b.resolve()))
+    assert kip.discover_connection_via_registry_single(fe.resolve()) is None
+    monkeypatch.delenv("JUPYTER_NOTEBOOK_PATH", raising=False)
 
 
 def test_resolve_via_registry_single_prefers_user_registry(isolated_registry, tmp_path, monkeypatch) -> None:

@@ -25,14 +25,54 @@ JUPYLINK_RECORD_CSV_URI = "jupylink://record/csv"
 _bound_notebook: Path | None = None
 
 
-def _get_notebook_path(notebook_path: str | None) -> Path:
-    """Resolve notebook path: use arg, else bound default, else raise."""
-    if notebook_path and str(notebook_path).strip():
-        return Path(notebook_path).resolve()
+def _active_notebook_from_env_or_file() -> Path | None:
+    """Optional notebook path for agents/IDE integration (not known to MCP protocol natively)."""
+    p = os.environ.get("JUPYLINK_ACTIVE_NOTEBOOK", "").strip()
+    if p:
+        exp = Path(p).expanduser()
+        if exp.is_file() and exp.suffix.lower() == ".ipynb":
+            return exp.resolve()
+    fp = os.environ.get("JUPYLINK_ACTIVE_NOTEBOOK_FILE", "").strip()
+    if fp:
+        try:
+            line = Path(fp).expanduser().read_text(encoding="utf-8").splitlines()[0].strip()
+            if line.endswith(".ipynb"):
+                exp = Path(line).expanduser()
+                if exp.is_file():
+                    return exp.resolve()
+        except OSError:
+            pass
+    for rel in (Path(".jupylink") / "active_notebook", Path("jupylink-active-notebook")):
+        try:
+            cand = (Path.cwd() / rel).resolve()
+            if cand.is_file():
+                line = cand.read_text(encoding="utf-8").splitlines()[0].strip()
+                if line.endswith(".ipynb"):
+                    exp = Path(line).expanduser()
+                    if exp.is_file():
+                        return exp.resolve()
+        except OSError:
+            pass
+    return None
+
+
+def _effective_default_notebook() -> Path | None:
+    """Notebook used for tools/resources when no path is passed: CLI ``-n``, env, or active hint."""
     if _bound_notebook:
         return _bound_notebook
+    return _active_notebook_from_env_or_file()
+
+
+def _get_notebook_path(notebook_path: str | None) -> Path:
+    """Resolve notebook path: use arg, else bound default, else active hint, else raise."""
+    if notebook_path and str(notebook_path).strip():
+        return Path(notebook_path).resolve()
+    eff = _effective_default_notebook()
+    if eff is not None:
+        return eff
     raise ValueError(
-        "notebook_path is required. Start server with --notebook or set JUPYLINK_DEFAULT_NOTEBOOK."
+        "notebook_path is required. Start server with --notebook, set JUPYLINK_DEFAULT_NOTEBOOK, "
+        "or set JUPYLINK_ACTIVE_NOTEBOOK / .jupylink/active_notebook (see docs)."
     )
 
 
@@ -300,9 +340,12 @@ def _record_json_to_csv(data: dict) -> str:
 )
 def _resource_record_json() -> str:
     """MCP resource: read _record.json for the bound notebook."""
-    if not _bound_notebook:
-        return json.dumps({"error": "No notebook bound. Start with --notebook or JUPYLINK_DEFAULT_NOTEBOOK."})
-    path = _bound_notebook.resolve()
+    eff = _effective_default_notebook()
+    if eff is None:
+        return json.dumps({
+            "error": "No notebook bound. Use --notebook, JUPYLINK_DEFAULT_NOTEBOOK, or JUPYLINK_ACTIVE_NOTEBOOK."
+        })
+    path = eff.resolve()
     json_path = path.parent / f"{path.stem}_record.json"
     if not json_path.exists():
         return json.dumps({"error": f"Record not found: {json_path}"})
@@ -318,9 +361,10 @@ def _resource_record_json() -> str:
 )
 def _resource_record_csv() -> str:
     """MCP resource: read _record.csv for the bound notebook (generates from JSON if needed)."""
-    if not _bound_notebook:
-        return "error,No notebook bound. Start with --notebook or JUPYLINK_DEFAULT_NOTEBOOK."
-    path = _bound_notebook.resolve()
+    eff = _effective_default_notebook()
+    if eff is None:
+        return "error,No notebook bound. Use --notebook, JUPYLINK_DEFAULT_NOTEBOOK, or JUPYLINK_ACTIVE_NOTEBOOK."
+    path = eff.resolve()
     csv_path = path.parent / f"{path.stem}_record.csv"
     json_path = path.parent / f"{path.stem}_record.json"
     if csv_path.exists():
@@ -346,7 +390,8 @@ def run_mcp_server(port: int = 0, notebook_path: str | None = None) -> None:
         _bound_notebook = Path(env_path).resolve() if env_path else None
 
     print("JupyLink MCP server starting (stdio mode)...", file=sys.stderr)
-    if _bound_notebook:
-        print(f"Default notebook: {_bound_notebook}", file=sys.stderr)
+    eff = _effective_default_notebook()
+    if eff:
+        print(f"Default notebook: {eff}", file=sys.stderr)
     print("Connect via Cursor MCP. Press Ctrl+C to exit.", file=sys.stderr)
     mcp.run(transport="stdio")

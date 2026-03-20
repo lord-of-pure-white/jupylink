@@ -21,6 +21,27 @@ from .record_manager import RecordManager, _is_ide_injected_code
 logger = logging.getLogger(__name__)
 
 
+def _notebook_path_from_env_or_argv() -> str | None:
+    """Resolve ``.ipynb`` path from Jupyter/JupyLink env or argv (early registration)."""
+    for key in (
+        "JUPYTER_NOTEBOOK_PATH",
+        "JPY_SESSION_NAME",
+        "JUPYLINK_NOTEBOOK_PATH",
+        "JUPYLINK_IDE_NOTEBOOK_PATH",
+    ):
+        raw = os.environ.get(key, "").strip()
+        if raw.endswith(".ipynb"):
+            p = Path(raw).expanduser()
+            if p.is_file():
+                return str(p.resolve())
+    for arg in sys.argv:
+        if isinstance(arg, str) and arg.lower().endswith(".ipynb"):
+            p = Path(arg).expanduser()
+            if p.is_file():
+                return str(p.resolve())
+    return None
+
+
 class _CapturingStreamWrapper:
     """Wraps stdout/stderr to capture output during execution.
 
@@ -105,8 +126,8 @@ class JupyLinkKernel(IPythonKernel):
         Do NOT load execution history — after kernel restart the process has no
         in-memory state. Reset record to all-pending so it reflects fresh kernel.
         """
-        path = os.environ.get("JUPYTER_NOTEBOOK_PATH") or os.environ.get("JPY_SESSION_NAME")
-        if path and str(path).endswith(".ipynb"):
+        path = _notebook_path_from_env_or_argv()
+        if path:
             self._record_manager.set_notebook_path(path)
             self._record_manager.write_record()  # reset: all cells pending (no prior execution)
             self._register_for_cli()

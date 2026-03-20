@@ -194,6 +194,8 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 
 **Default notebook (optional)**: Add `-n notebook.ipynb` to args or set `JUPYLINK_DEFAULT_NOTEBOOK` in env. When set, tools can omit `notebook_path` — agent can call `jupylink_list_cells()` without passing the path.
 
+**Active notebook without `-n`**: MCP has no API for “currently open file”. Set `JUPYLINK_ACTIVE_NOTEBOOK` to an absolute `.ipynb` path, or `JUPYLINK_ACTIVE_NOTEBOOK_FILE` to a text file whose first line is that path, or put the path in workspace `.jupylink/active_notebook` (first line). Then tools can omit `notebook_path` the same way as with `-n`.
+
 **Project-level** `.cursor/mcp.json` can override with `args: ["serve", "-n", "test.ipynb"]` so the current project's notebook is automatic.
 
 **Tools**:
@@ -285,6 +287,9 @@ If **MCP/CLI already started** a JupyLink kernel and registered it, the IDE can 
   - `JUPYLINK_IDE_REGISTRY_SINGLE=0`: Do not auto-pick the sole kernel from ``kernels.json`` (default is on: single registration → bridge).
   - `JUPYLINK_IDE_SIDECAR=0`: Do not scan for ``*.jupylink_kernel.json`` under cwd.
   - `JUPYLINK_IDE_SIDECAR_DEPTH`: Max directory depth from cwd for sidecar scan (default `12`).
+  - `JUPYLINK_IDE_SIDECAR_ROOT`: Extra directory to scan for sidecars (in addition to cwd and the hinted notebook’s parent).
+  - `JUPYLINK_IDE_CONNECTION_PROBE=0`: Skip the short heartbeat check before bridging (faster; may attach to dead kernels if JSON files linger).
+  - **Registry single + notebook hint**: If `JUPYTER_NOTEBOOK_PATH` / `JUPYLINK_IDE_NOTEBOOK_PATH` / `JPY_SESSION_NAME` points at a real `.ipynb`, the sole registry entry is used only when its notebook matches that path (avoids bridging the wrong kernel).
 
 ## IDE Refresh
 

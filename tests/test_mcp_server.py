@@ -255,3 +255,18 @@ class TestMCPExecute:
             if os.path.normcase(k["notebook_path"]) == os.path.normcase(nb_path)
         ]
         assert len(matching) <= 1, f"Expected at most 1 kernel for notebook, got {len(matching)}: {matching}"
+
+
+class TestActiveNotebookHint:
+    """MCP cannot read the editor's open file; env/file hints fill the gap."""
+
+    def test_jupylink_active_notebook_env(
+        self, tmp_notebook: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(mcp_server, "_bound_notebook", None)
+        monkeypatch.setenv("JUPYLINK_ACTIVE_NOTEBOOK", str(tmp_notebook.resolve()))
+        try:
+            cells = json.loads(jupylink_list_cells())
+            assert len(cells) >= 1
+        finally:
+            monkeypatch.delenv("JUPYLINK_ACTIVE_NOTEBOOK", raising=False)

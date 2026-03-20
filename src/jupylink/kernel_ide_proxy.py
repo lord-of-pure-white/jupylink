@@ -34,6 +34,36 @@ def parse_connection_file_from_argv(argv: list[str]) -> str | None:
     return None
 
 
+def probe_kernel_connection_file(connection_file: str, timeout: float = 0.6) -> bool:
+    """Return True if a kernel appears to answer on the heartbeat channel.
+
+    Connection JSON may still exist on disk after the process exits; this weeds out
+    most dead kernels without blocking the IDE proxy loop (used only at bridge resolve).
+    """
+    try:
+        from jupyter_client.blocking.client import BlockingKernelClient
+    except ImportError:
+        logger.debug("jupyter_client not available; skipping connection probe")
+        return True
+
+    kc: Any = None
+    try:
+        kc = BlockingKernelClient()
+        kc.load_connection_file(connection_file)
+        kc.start_channels()
+        kc.wait_for_ready(timeout=timeout)
+        return True
+    except Exception:
+        logger.debug("Connection probe failed for %s", connection_file, exc_info=True)
+        return False
+    finally:
+        if kc is not None:
+            try:
+                kc.stop_channels()
+            except Exception:
+                pass
+
+
 def _session_from_cfg(cfg: dict[str, Any]) -> Session:
     s = Session()
     key = cfg.get("key", "")
@@ -53,6 +83,22 @@ def _url(cfg: dict[str, Any], port_key: str) -> str:
     if transport == "tcp":
         return f"tcp://{ip}:{port}"
     return f"{transport}://{ip}-{port}"
+
+
+def _explicit_ide_notebook_file() -> Path | None:
+    """Notebook path from IDE/Jupyter env (not ``JUPYLINK_IDE_REUSE_UNIQUE``)."""
+    for key in (
+        "JUPYLINK_IDE_NOTEBOOK_PATH",
+        "JUPYTER_NOTEBOOK_PATH",
+        "JPY_SESSION_NAME",
+        "JUPYLINK_NOTEBOOK_PATH",
+    ):
+        v = os.environ.get(key, "").strip()
+        if v.endswith(".ipynb"):
+            p = Path(v).expanduser()
+            if p.is_file():
+                return p.resolve()
+    return None
 
 
 def _ide_notebook_path_for_reuse() -> Path | None:
@@ -123,10 +169,33 @@ def _iter_jupylink_sidecar_files(root: Path, max_depth: int):
                 yield dp / fn
 
 
-def discover_connection_via_workspace_sidecars(frontend_cf: Path) -> str | None:
-    """If cwd tree has exactly one valid ``*.jupylink_kernel.json``, return its connection file.
+def _sidecar_scan_roots() -> list[Path]:
+    """Directories to scan for ``*.jupylink_kernel.json`` (cwd alone is often wrong in IDEs)."""
+    roots: list[Path] = []
+    extra = os.environ.get("JUPYLINK_IDE_SIDECAR_ROOT", "").strip()
+    if extra:
+        ep = Path(extra).expanduser().resolve()
+        if ep.is_dir():
+            roots.append(ep)
+    roots.append(Path.cwd().resolve())
+    nb = _explicit_ide_notebook_file()
+    if nb is not None:
+        roots.append(nb.parent.resolve())
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for r in roots:
+        if r in seen or not r.is_dir():
+            continue
+        seen.add(r)
+        out.append(r)
+    return out
 
-    Sidecars are written next to notebooks when a kernel registers (MCP or IDE).
+
+def discover_connection_via_workspace_sidecars(frontend_cf: Path) -> str | None:
+    """Resolve upstream connection via sidecar next to the notebook or under scan roots.
+
+    Prefer an explicit notebook env (``JUPYTER_NOTEBOOK_PATH``, etc.): read that
+    notebook's sidecar directly so cwd and multi-notebook trees do not block matching.
     """
     if os.environ.get("JUPYLINK_IDE_SIDECAR", "1").strip().lower() in ("0", "false", "no", "off"):
         return None
@@ -135,33 +204,52 @@ def discover_connection_via_workspace_sidecars(frontend_cf: Path) -> str | None:
     except (ValueError, TypeError):
         max_depth = 12
 
-    root = Path.cwd()
+    fe = frontend_cf.resolve()
+
+    nb = _explicit_ide_notebook_file()
+    if nb is not None:
+        from .kernel_registry import sidecar_path_for_notebook
+
+        sp = sidecar_path_for_notebook(nb)
+        if sp is not None and sp.is_file():
+            try:
+                data = json.loads(sp.read_text(encoding="utf-8"))
+                cf = data.get("connection_file")
+                if cf:
+                    p = Path(cf).resolve()
+                    if p.is_file() and p != fe:
+                        return str(p)
+            except Exception:
+                logger.debug("Bad sidecar for hinted notebook %s", sp, exc_info=True)
+
     candidates: set[str] = set()
-    for sp in _iter_jupylink_sidecar_files(root, max_depth):
-        try:
-            data = json.loads(sp.read_text(encoding="utf-8"))
-            cf = data.get("connection_file")
-            if not cf:
+    for root in _sidecar_scan_roots():
+        for sp in _iter_jupylink_sidecar_files(root, max_depth):
+            try:
+                data = json.loads(sp.read_text(encoding="utf-8"))
+                cf = data.get("connection_file")
+                if not cf:
+                    continue
+                p = Path(cf).resolve()
+                if not p.is_file():
+                    continue
+                if p == fe:
+                    continue
+                candidates.add(str(p))
+            except Exception:
+                logger.debug("Bad or unreadable sidecar %s", sp, exc_info=True)
                 continue
-            p = Path(cf).resolve()
-            if not p.is_file():
-                continue
-            if p == frontend_cf.resolve():
-                continue
-            candidates.add(str(p))
-        except Exception:
-            logger.debug("Bad or unreadable sidecar %s", sp, exc_info=True)
-            continue
     if len(candidates) == 1:
         return candidates.pop()
     return None
 
 
 def discover_connection_via_registry_single(frontend_cf: Path) -> str | None:
-    """If the global registry has exactly one live kernel, use it (no cwd, no /tmp).
+    """If the global registry has exactly one live kernel, use it when it matches hints.
 
-    Data lives under the same user directory as ``kernels.json`` (e.g. ``~/.jupylink/`` or
-    ``%APPDATA%/jupylink/``), so it survives reboots and does not depend on IDE cwd.
+    When ``JUPYTER_NOTEBOOK_PATH`` / ``JUPYLINK_IDE_NOTEBOOK_PATH`` / ``JPY_SESSION_NAME``
+    points at a real notebook, the sole registry entry must be for that notebook (same
+    canonical path); otherwise we avoid bridging the IDE to the wrong kernel.
     """
     if os.environ.get("JUPYLINK_IDE_REGISTRY_SINGLE", "1").strip().lower() in (
         "0",
@@ -171,10 +259,14 @@ def discover_connection_via_registry_single(frontend_cf: Path) -> str | None:
     ):
         return None
 
-    from .kernel_registry import list_kernels
+    from .kernel_registry import _normalize, list_kernels
 
     kernels = list_kernels()
     if len(kernels) != 1:
+        return None
+    hint = _explicit_ide_notebook_file()
+    nb_reg = kernels[0]["notebook_path"]
+    if hint is not None and _normalize(nb_reg) != _normalize(hint):
         return None
     cf = kernels[0].get("connection_file")
     if not cf:
@@ -192,34 +284,48 @@ def resolve_existing_connection_for_ide(frontend_cf: str) -> str | None:
         return None
 
     fe = Path(frontend_cf).resolve()
+    probe_on = os.environ.get("JUPYLINK_IDE_CONNECTION_PROBE", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+    ordered: list[str] = []
 
     explicit = os.environ.get("JUPYLINK_IDE_CONNECTION_FILE", "").strip()
     if explicit:
         ep = Path(explicit).resolve()
         if ep.is_file() and ep != fe:
-            return str(ep)
+            ordered.append(str(ep))
 
     via_registry = discover_connection_via_registry_single(fe)
     if via_registry:
-        return via_registry
+        ordered.append(via_registry)
 
     via_sidecar = discover_connection_via_workspace_sidecars(fe)
     if via_sidecar:
-        return via_sidecar
+        ordered.append(via_sidecar)
 
     nb = _ide_notebook_path_for_reuse()
-    if nb is None:
-        return None
+    if nb is not None:
+        from .kernel_registry import get_connection_file
 
-    from .kernel_registry import get_connection_file
+        existing = get_connection_file(nb)
+        if existing:
+            ordered.append(existing)
 
-    existing = get_connection_file(nb)
-    if not existing:
-        return None
-    ex = Path(existing).resolve()
-    if ex == fe or not ex.is_file():
-        return None
-    return str(ex)
+    seen: set[str] = set()
+    for cand in ordered:
+        cr = str(Path(cand).resolve())
+        if cr in seen or cr == str(fe):
+            continue
+        seen.add(cr)
+        if not Path(cr).is_file():
+            continue
+        if not probe_on or probe_kernel_connection_file(cr):
+            return cr
+    return None
 
 
 def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
@@ -274,6 +380,8 @@ def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
     shell_pending: deque[list[bytes]] = deque()
     control_pending: deque[list[bytes]] = deque()
     last_routing_idents: list[bytes] = []
+    hb_front_queue: deque[bytes] = deque()
+    hb_upstream_pending = False
 
     logger.info("IDE bridge: listening on %s; upstream %s", frontend_cf, existing_cf)
 
@@ -298,6 +406,19 @@ def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
             except Exception:
                 logger.exception("iopub forward failed")
 
+    def _hb_start_upstream_if_idle() -> None:
+        nonlocal hb_upstream_pending
+        if hb_upstream_pending or not hb_front_queue:
+            return
+        ping = hb_front_queue.popleft()
+        try:
+            a_hb.send(ping)
+            hb_upstream_pending = True
+            poller.register(a_hb, zmq.POLLIN)
+        except Exception:
+            logger.exception("heartbeat forward to upstream failed")
+            hb_front_queue.appendleft(ping)
+
     try:
         while True:
             drain_iopub()
@@ -307,12 +428,29 @@ def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
 
             if b_hb in events:
                 try:
-                    ping = b_hb.recv(zmq.NOBLOCK)
-                    a_hb.send(ping)
-                    pong = a_hb.recv()
+                    while True:
+                        hb_front_queue.append(b_hb.recv(zmq.NOBLOCK))
+                except zmq.Again:
+                    pass
+                except Exception:
+                    logger.exception("heartbeat recv from frontend failed")
+                _hb_start_upstream_if_idle()
+
+            if a_hb in events and hb_upstream_pending:
+                try:
+                    pong = a_hb.recv(zmq.NOBLOCK)
                     b_hb.send(pong)
+                except zmq.Again:
+                    pass
                 except Exception:
                     logger.exception("heartbeat bridge failed")
+                else:
+                    try:
+                        poller.unregister(a_hb)
+                    except Exception:
+                        pass
+                    hb_upstream_pending = False
+                    _hb_start_upstream_if_idle()
 
             drain_iopub()
 
@@ -396,6 +534,11 @@ def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
                     logger.exception("stdin recv from upstream failed")
 
     finally:
+        if hb_upstream_pending:
+            try:
+                poller.unregister(a_hb)
+            except Exception:
+                pass
         for s in (
             b_shell,
             b_control,
@@ -420,7 +563,11 @@ def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
 
 
 def maybe_run_ide_proxy_from_argv(argv: list[str] | None = None) -> bool:
-    """If reuse applies, run proxy and return True; else return False."""
+    """If reuse applies, run proxy and return True; else return False.
+
+    When bridging, this process is only a ZMQ proxy; the real JupyLinkKernel runs in the
+    upstream MCP/CLI kernel process (records, registry, execute hooks live there).
+    """
     argv = argv if argv is not None else sys.argv
     frontend_cf = parse_connection_file_from_argv(argv)
     if not frontend_cf or not Path(frontend_cf).is_file():
