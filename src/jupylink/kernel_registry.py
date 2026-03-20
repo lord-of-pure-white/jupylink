@@ -14,7 +14,7 @@ import sys
 import urllib.parse
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 from filelock import FileLock
 
@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 
 # Next to foo.ipynb: foo.jupylink_kernel.json — lets IDE kernel auto-find MCP kernel without env vars.
 KERNEL_SIDECAR_SUFFIX = ".jupylink_kernel.json"
+
+# Single line: absolute ``.ipynb`` path last used by MCP/CLI (same dir as ``kernels.json``).
+_LAST_ACTIVE_NOTEBOOK_NAME = "last_active_notebook"
+
+
+def user_jupylink_dir() -> Path:
+    """Per-user state: ``kernels.json``, ``last_active_notebook``, locks.
+
+    Windows: ``%APPDATA%/jupylink/`` · macOS: ``~/.jupylink/`` · Linux: XDG data or ``~/.jupylink/``.
+    """
+    return _registry_path().parent
 
 
 def _registry_path() -> Path:
@@ -121,6 +132,100 @@ def _fix_windows_drive_relative(p: str) -> str:
     if p[1] == ":" and p[2] not in "\\/":
         return p[:2] + "\\" + p[2:]
     return p
+
+
+_MAX_ACTIVE_NOTEBOOK_WALK = 12
+
+
+def read_active_notebook_hint(*, cwd: Path | None = None) -> Path | None:
+    """Resolve ``.ipynb`` from env or ``.jupylink/active_notebook`` (walk upward from *cwd*).
+
+    Used by MCP default notebook resolution and by the IDE bridge at process start (before
+    any ``execute_request``). ``write_active_notebook_hint`` updates these files when
+    MCP/CLI runs cells so the IDE can attach without manual env vars.
+    """
+    raw = os.environ.get("JUPYLINK_ACTIVE_NOTEBOOK", "").strip()
+    if raw.endswith(".ipynb"):
+        try:
+            exp = resolve_notebook_filesystem_path(raw)
+            if exp.is_file():
+                return exp
+        except (OSError, ValueError):
+            pass
+
+    fp = os.environ.get("JUPYLINK_ACTIVE_NOTEBOOK_FILE", "").strip()
+    if fp:
+        try:
+            line = Path(fp).expanduser().read_text(encoding="utf-8").splitlines()[0].strip()
+            if line.endswith(".ipynb"):
+                try:
+                    exp = resolve_notebook_filesystem_path(line)
+                    if exp.is_file():
+                        return exp
+                except (OSError, ValueError):
+                    pass
+        except OSError:
+            pass
+
+    try:
+        lastp = user_jupylink_dir() / _LAST_ACTIVE_NOTEBOOK_NAME
+        if lastp.is_file():
+            line = lastp.read_text(encoding="utf-8").splitlines()[0].strip()
+            if line.endswith(".ipynb"):
+                try:
+                    exp = resolve_notebook_filesystem_path(line)
+                    if exp.is_file():
+                        return exp
+                except (OSError, ValueError):
+                    pass
+    except OSError:
+        pass
+
+    cur = (cwd or Path.cwd()).resolve()
+    for _ in range(_MAX_ACTIVE_NOTEBOOK_WALK + 1):
+        for cand in (cur / ".jupylink" / "active_notebook", cur / "jupylink-active-notebook"):
+            try:
+                if not cand.is_file():
+                    continue
+                line = cand.read_text(encoding="utf-8").splitlines()[0].strip()
+                if not line.endswith(".ipynb"):
+                    continue
+                try:
+                    exp = resolve_notebook_filesystem_path(line)
+                    if exp.is_file():
+                        return exp
+                except (OSError, ValueError):
+                    pass
+            except OSError:
+                pass
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
+def write_active_notebook_hint(notebook_path: str | Path) -> None:
+    """Record *notebook_path* so the IDE kernel can resolve it before the first cell runs."""
+    try:
+        p = resolve_notebook_filesystem_path(notebook_path)
+    except (OSError, ValueError):
+        return
+    if not p.is_file() or p.suffix.lower() != ".ipynb":
+        return
+    line = str(p) + "\n"
+    try:
+        ud = user_jupylink_dir()
+        ud.mkdir(mode=0o700, parents=True, exist_ok=True)
+        (ud / _LAST_ACTIVE_NOTEBOOK_NAME).write_text(line, encoding="utf-8")
+    except OSError:
+        logger.debug("Could not write %s in user jupylink dir", _LAST_ACTIVE_NOTEBOOK_NAME, exc_info=True)
+    for base in (p.parent.resolve(), Path.cwd().resolve()):
+        try:
+            d = base / ".jupylink"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "active_notebook").write_text(line, encoding="utf-8")
+        except OSError:
+            logger.debug("Could not write active notebook hint under %s", base, exc_info=True)
 
 
 def resolve_notebook_filesystem_path(path: str | Path) -> Path:
@@ -272,16 +377,65 @@ def _remove_kernel_sidecar(notebook_path: str | Path) -> None:
             pass
 
 
+def _shutdown_kernel_via_connection_file(connection_file: str) -> None:
+    """Ask an ipykernel to shut down (best effort)."""
+    try:
+        from jupyter_client.blocking.client import BlockingKernelClient
+    except ImportError:
+        logger.debug("jupyter_client not available; skipping predecessor shutdown")
+        return
+    kc: Any = None
+    try:
+        kc = BlockingKernelClient()
+        kc.load_connection_file(connection_file)
+        kc.start_channels()
+        try:
+            kc.wait_for_ready(timeout=2.0)
+        except Exception:
+            pass
+        kc.shutdown()
+    except Exception:
+        logger.debug("Predecessor shutdown failed for %s", connection_file, exc_info=True)
+    finally:
+        if kc is not None:
+            try:
+                kc.stop_channels()
+            except Exception:
+                pass
+
+
 def register(notebook_path: str | Path, connection_file: str) -> None:
     """Register a kernel for the given notebook.
 
     Called by JupyLink kernel when it has a notebook path.
+    At most one registered connection per notebook; if a different connection was
+    registered before, the old kernel is asked to shut down when
+    ``JUPYLINK_REGISTER_SHUTDOWN_PREDECESSOR`` is on (default), so stray live kernels
+    do not accumulate for the same ``.ipynb``.
     """
     nb = _normalize(notebook_path)
     cf = str(Path(connection_file).resolve())
+    shutdown_pred = os.environ.get("JUPYLINK_REGISTER_SHUTDOWN_PREDECESSOR", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
 
     def _do():
         kernels = _read_registry()
+        old_cf: str | None = None
+        for k, v in kernels.items():
+            if _normalize(k) == nb:
+                old_cf = v
+                break
+        if (
+            shutdown_pred
+            and old_cf
+            and Path(old_cf).resolve() != Path(cf).resolve()
+            and Path(old_cf).is_file()
+        ):
+            _shutdown_kernel_via_connection_file(old_cf)
         for k in list(kernels):
             if k != nb and _normalize(k) == nb:
                 kernels.pop(k, None)

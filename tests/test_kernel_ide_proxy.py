@@ -92,6 +92,7 @@ def test_discover_ambiguous_two_sidecars(tmp_path, monkeypatch) -> None:
 
 def test_resolve_via_registry(isolated_registry, tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
+    monkeypatch.chdir(tmp_path)
     nb = tmp_path / "n.ipynb"
     nb.write_text("{}", encoding="utf-8")
     cf = tmp_path / "k.json"
@@ -107,6 +108,7 @@ def test_resolve_via_registry(isolated_registry, tmp_path, monkeypatch) -> None:
 def test_registry_single_require_notebook_hint_blocks_unhinted(
     isolated_registry, tmp_path, monkeypatch
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
     monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE", "1")
     monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT", "1")
@@ -125,6 +127,7 @@ def test_registry_single_skips_when_env_notebook_differs(
     isolated_registry, tmp_path, monkeypatch
 ) -> None:
     """Single registry entry must not bridge if env points at a different notebook."""
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
     nb_a = tmp_path / "a.ipynb"
     nb_b = tmp_path / "b.ipynb"
@@ -142,6 +145,7 @@ def test_registry_single_skips_when_env_notebook_differs(
 
 def test_resolve_via_registry_single_prefers_user_registry(isolated_registry, tmp_path, monkeypatch) -> None:
     """Single entry in kernels.json suffices; no notebook env or cwd sidecar."""
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
     monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE", "1")
     nb = tmp_path / "n.ipynb"
@@ -198,3 +202,47 @@ def test_proxy_roundtrip_with_kernel_manager(tmp_path, monkeypatch) -> None:
             km.shutdown_kernel(now=True)
         except Exception:
             pass
+
+
+def test_active_notebook_hint_unblocks_registry_single_require_hint(
+    isolated_registry, tmp_path, monkeypatch
+) -> None:
+    """MCP-style ``write_active_notebook_hint`` lets IDE bridge when strict hint is required."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
+    monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE", "1")
+    monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT", "1")
+    nb = tmp_path / "n.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    cf = tmp_path / "k.json"
+    cf.write_text("{}", encoding="utf-8")
+    fe = tmp_path / "front.json"
+    fe.write_text("{}", encoding="utf-8")
+    kr.register(nb, str(cf))
+    kr.write_active_notebook_hint(nb)
+    assert kip.resolve_existing_connection_for_ide(str(fe)) == str(cf.resolve())
+
+
+def test_resolve_unique_live_picks_only_heartbeat_ok(
+    isolated_registry, tmp_path, monkeypatch
+) -> None:
+    """Several registry rows but only one live kernel → bridge to that connection file."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
+    monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE", "0")
+    for name in ("a", "b"):
+        (tmp_path / f"{name}.ipynb").write_text("{}", encoding="utf-8")
+    cf1 = tmp_path / "k1.json"
+    cf2 = tmp_path / "k2.json"
+    cf1.write_text("{}", encoding="utf-8")
+    cf2.write_text("{}", encoding="utf-8")
+    fe = tmp_path / "front.json"
+    fe.write_text("{}", encoding="utf-8")
+    kr.register(tmp_path / "a.ipynb", str(cf1))
+    kr.register(tmp_path / "b.ipynb", str(cf2))
+
+    def probe(cf: str, *a, **k) -> bool:
+        return Path(cf).resolve() == cf2.resolve()
+
+    monkeypatch.setattr(kip, "probe_kernel_connection_file", probe)
+    assert kip.resolve_existing_connection_for_ide(str(fe)) == str(cf2.resolve())

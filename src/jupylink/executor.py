@@ -19,6 +19,7 @@ from .kernel_registry import (
     resolve_notebook_filesystem_path,
     spawn_lock,
     unregister,
+    write_active_notebook_hint,
 )
 from .notify_ide import request_notebook_refresh
 from .record_manager import RecordManager
@@ -182,7 +183,11 @@ def _connect_existing_kernel(path: Path) -> BlockingKernelClient | None:
 def _spawn_kernel(path: Path) -> tuple[Any, BlockingKernelClient] | None:
     """Spawn a new kernel for this notebook. Returns (km, kc) or None."""
     env = os.environ.copy()
-    env["JUPYTER_NOTEBOOK_PATH"] = str(path)
+    p = str(path)
+    env["JUPYTER_NOTEBOOK_PATH"] = p
+    # Same canonical path for IDE bridge hints (Jupyter kernel env is a different process).
+    env["JUPYLINK_IDE_NOTEBOOK_PATH"] = p
+    env["JUPYLINK_NOTEBOOK_PATH"] = p
 
     kernel_name = "jupylink"
     try:
@@ -210,6 +215,7 @@ def execute_cell(notebook_path: str | Path, cell_id: str) -> dict[str, Any] | No
     path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return None
+    write_active_notebook_hint(path)
 
     code = get_cell_source(path, cell_id)
     if code is None:
@@ -255,6 +261,7 @@ def execute_cells(
     path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return []
+    write_active_notebook_hint(path)
 
     codes: list[tuple[str, str]] = []
     for cid in cell_ids:

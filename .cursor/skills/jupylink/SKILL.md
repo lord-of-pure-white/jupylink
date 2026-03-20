@@ -208,10 +208,11 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 | `jupylink_write_cell` | notebook_path, cell_id, content | `{"status":"ok"}` or error |
 | `jupylink_create_cell` | notebook_path, cell_type?, index?, source? | `{"cell_id":"..."}` or error |
 | `jupylink_delete_cell` | notebook_path, cell_id | `{"status":"ok"}` or error |
-| `jupylink_execute_cell` | notebook_path, cell_id | JSON result or error |
-| `jupylink_execute_cells` | notebook_path, cell_ids | JSON list of results; use for dependent cells |
+| `jupylink_execute_cell` | notebook_path, cell_id | JSON result or error; on success includes `jupylink_ide_reuse` (env block for IDE kernel bridge) |
+| `jupylink_execute_cells` | notebook_path, cell_ids | JSON list of per-cell results only (no `jupylink_ide_reuse`; use `get_ide_bridge_env` if needed) |
 | `jupylink_list_cells` | notebook_path | JSON cell list |
 | `jupylink_list_kernels` | — | JSON list of running kernels: notebook_path, connection_file |
+| `jupylink_get_ide_bridge_env` | notebook_path? | JSON: `notebook_path`, `connection_file`, `sidecar_*`, `env_for_ide_jupyter_kernel`, `instructions` — copy env into Jupyter kernel so IDE matches MCP |
 | `jupylink_get_record` | notebook_path | .py record content (read-only if file exists) |
 | `jupylink_sync_record` | notebook_path | Re-merges ipynb with history, rewrites record files |
 | `jupylink_get_status` | notebook_path | Lightweight JSON summary of cell statuses (read-only) |
@@ -236,6 +237,12 @@ Use `list_mcp_resources` / `fetch_mcp_resource` to view record files:
 ### MCP first, then IDE kernel (reuse same process)
 
 If **MCP/CLI already started** a JupyLink kernel and registered it, the IDE can attach to that process instead of starting a second one:
+
+**Automatic (default)**: Each MCP/CLI execute updates (1) **`last_active_notebook`** in the **per-user JupyLink dir** (same place as `kernels.json`: e.g. `%APPDATA%/jupylink/` on Windows, `~/.jupylink/` on macOS, XDG on Linux), (2) **`.jupylink/active_notebook`** next to the `.ipynb` and under `cwd` when possible. The IDE bridge reads **user `last_active_notebook` first** (no dependency on kernel `cwd`), then env / upward walk, then **`get_connection_file`** for that path — so you attach to the registered kernel without setting variables.
+
+**One live kernel per notebook**: `kernels.json` keeps **one** connection file per canonical notebook path. When a **new** connection registers for the same `.ipynb`, the **previous** kernel is sent a shutdown request by default (`JUPYLINK_REGISTER_SHUTDOWN_PREDECESSOR`, default on). Set it to `0` only if you rely on overlapping processes.
+
+**Optional env**: If resolution still fails (ambiguous live kernels, etc.), use **`jupylink_get_ide_bridge_env`** / **`jupylink_ide_reuse`**, or **`JUPYLINK_IDE_CONNECTION_FILE`**. **`JUPYLINK_IDE_REGISTRY_UNIQUE_LIVE=0`** disables “only one heartbeat among several registry rows” disambiguation.
 
 1. On startup, `python -m jupylink` checks whether to **bridge** the IDE’s new connection file to an existing kernel (ZMQ proxy with HMAC re-signing).
 2. **Match rules** (first hit wins after `JUPYLINK_IDE_REUSE` is on):
@@ -294,6 +301,8 @@ If **MCP/CLI already started** a JupyLink kernel and registered it, the IDE can 
   - **Registry single + notebook hint**: If `JUPYTER_NOTEBOOK_PATH` / `JUPYLINK_IDE_NOTEBOOK_PATH` / `JPY_SESSION_NAME` points at a real `.ipynb`, the sole registry entry is used only when its notebook matches that path (avoids bridging the wrong kernel).
   - `JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT=1`: If set, never use “sole registry entry” bridging unless one of those env vars resolves to an existing `.ipynb` (stricter when the IDE does not export a path).
   - `JUPYLINK_IDE_PROBE_TIMEOUT`: Seconds for pre-bridge heartbeat probe (default `0.6`).
+  - `JUPYLINK_IDE_REGISTRY_UNIQUE_LIVE`: When `1` (default), if **several** rows exist in `kernels.json` but **only one** answers the heartbeat probe, bridge to that kernel (stale JSON rows are ignored).
+  - `JUPYLINK_REGISTER_SHUTDOWN_PREDECESSOR`: When `1` (default), registering a new connection for a notebook **shuts down** the previously registered kernel for that path so only one stays alive.
 - **Kernel record / UI responsiveness** (JupyLink kernel process):
   - By default, `_record.*` writes run in a **background thread** after `execute_reply` so the cell can finish in the UI without waiting for disk + `notebook_lock`.
   - `JUPYLINK_RECORD_SYNC_AFTER_EXECUTE=1`: Wait for record write before returning from `do_execute` (older behavior; can make the cell look “stuck” on large notebooks or lock contention).

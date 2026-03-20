@@ -95,7 +95,7 @@ def _url(cfg: dict[str, Any], port_key: str) -> str:
 
 def _explicit_ide_notebook_file() -> Path | None:
     """Notebook path from IDE/Jupyter env (not ``JUPYLINK_IDE_REUSE_UNIQUE``)."""
-    from .kernel_registry import resolve_notebook_filesystem_path
+    from .kernel_registry import read_active_notebook_hint, resolve_notebook_filesystem_path
 
     for key in (
         "JUPYLINK_IDE_NOTEBOOK_PATH",
@@ -111,11 +111,11 @@ def _explicit_ide_notebook_file() -> Path | None:
                     return p
             except (OSError, ValueError):
                 pass
-    return None
+    return read_active_notebook_hint(cwd=Path.cwd())
 
 
 def _ide_notebook_path_for_reuse() -> Path | None:
-    from .kernel_registry import resolve_notebook_filesystem_path
+    from .kernel_registry import read_active_notebook_hint, resolve_notebook_filesystem_path
 
     for key in ("JUPYLINK_IDE_NOTEBOOK_PATH", "JUPYTER_NOTEBOOK_PATH"):
         v = os.environ.get(key, "").strip()
@@ -134,6 +134,9 @@ def _ide_notebook_path_for_reuse() -> Path | None:
                 return p
         except (OSError, ValueError):
             pass
+    hinted = read_active_notebook_hint(cwd=Path.cwd())
+    if hinted is not None:
+        return hinted
     if os.environ.get("JUPYLINK_IDE_REUSE_UNIQUE", "").lower() in ("1", "true", "yes"):
         from .kernel_registry import list_kernels
 
@@ -309,6 +312,58 @@ def discover_connection_via_registry_single(frontend_cf: Path) -> str | None:
     return str(p)
 
 
+def discover_connection_via_registry_unique_live(frontend_cf: Path) -> str | None:
+    """When several kernels are registered but only one still answers HB, bridge to that one.
+
+    Stale ``kernels.json`` rows may keep paths to dead JSON files; the probe drops them.
+    If two or more kernels are alive, return None (ambiguous). Disable with
+    ``JUPYLINK_IDE_REGISTRY_UNIQUE_LIVE=0``.
+    """
+    if os.environ.get("JUPYLINK_IDE_REGISTRY_UNIQUE_LIVE", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        return None
+
+    probe_on = os.environ.get("JUPYLINK_IDE_CONNECTION_PROBE", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+    if not probe_on:
+        return None
+
+    from .kernel_registry import list_kernels
+
+    kernels = list_kernels()
+    if len(kernels) < 2:
+        return None
+
+    fe = frontend_cf.resolve()
+    live: list[str] = []
+    seen: set[str] = set()
+    for k in kernels:
+        cf = k.get("connection_file")
+        if not cf:
+            continue
+        p = Path(cf).resolve()
+        if not p.is_file() or p == fe:
+            continue
+        cr = str(p)
+        if cr in seen:
+            continue
+        seen.add(cr)
+        if probe_kernel_connection_file(cr):
+            live.append(cr)
+
+    if len(live) == 1:
+        return live[0]
+    return None
+
+
 def resolve_existing_connection_for_ide(frontend_cf: str) -> str | None:
     """Return path to an existing kernel connection JSON to bridge to, or None."""
     v = os.environ.get("JUPYLINK_IDE_REUSE", "1").strip().lower()
@@ -334,6 +389,10 @@ def resolve_existing_connection_for_ide(frontend_cf: str) -> str | None:
     via_registry = discover_connection_via_registry_single(fe)
     if via_registry:
         ordered.append(via_registry)
+
+    via_unique_live = discover_connection_via_registry_unique_live(fe)
+    if via_unique_live:
+        ordered.append(via_unique_live)
 
     via_sidecar = discover_connection_via_workspace_sidecars(fe)
     if via_sidecar:

@@ -7,12 +7,18 @@ import io
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
 from .executor import execute_cell, execute_cells
 from .ipynb_ops import create_cell, delete_cell, get_cell_source, list_cells, write_cell
-from .kernel_registry import list_kernels, resolve_notebook_filesystem_path
+from .kernel_registry import (
+    get_connection_file,
+    list_kernels,
+    resolve_notebook_filesystem_path,
+    sidecar_path_for_notebook,
+)
 from .record_manager import RecordManager
 
 mcp = FastMCP("JupyLink", json_response=True)
@@ -27,42 +33,9 @@ _bound_notebook: Path | None = None
 
 def _active_notebook_from_env_or_file() -> Path | None:
     """Optional notebook path for agents/IDE integration (not known to MCP protocol natively)."""
-    p = os.environ.get("JUPYLINK_ACTIVE_NOTEBOOK", "").strip()
-    if p:
-        try:
-            exp = resolve_notebook_filesystem_path(p)
-            if exp.is_file() and exp.suffix.lower() == ".ipynb":
-                return exp
-        except (OSError, ValueError):
-            pass
-    fp = os.environ.get("JUPYLINK_ACTIVE_NOTEBOOK_FILE", "").strip()
-    if fp:
-        try:
-            line = Path(fp).expanduser().read_text(encoding="utf-8").splitlines()[0].strip()
-            if line.endswith(".ipynb"):
-                try:
-                    exp = resolve_notebook_filesystem_path(line)
-                    if exp.is_file():
-                        return exp
-                except (OSError, ValueError):
-                    pass
-        except OSError:
-            pass
-    for rel in (Path(".jupylink") / "active_notebook", Path("jupylink-active-notebook")):
-        try:
-            cand = (Path.cwd() / rel).resolve()
-            if cand.is_file():
-                line = cand.read_text(encoding="utf-8").splitlines()[0].strip()
-                if line.endswith(".ipynb"):
-                    try:
-                        exp = resolve_notebook_filesystem_path(line)
-                        if exp.is_file():
-                            return exp
-                    except (OSError, ValueError):
-                        pass
-        except OSError:
-            pass
-    return None
+    from .kernel_registry import read_active_notebook_hint
+
+    return read_active_notebook_hint(cwd=Path.cwd())
 
 
 def _effective_default_notebook() -> Path | None:
@@ -92,6 +65,32 @@ def _resolve_notebook(notebook_path: str | None) -> Path:
     if p.suffix != ".ipynb":
         raise ValueError(f"Not a notebook file: {p}")
     return p
+
+
+def _ide_bridge_hint(path: Path) -> dict[str, Any]:
+    """How to point the IDE JupyLink kernel at the same process MCP/CLI uses (registry + sidecar)."""
+    p = path.resolve()
+    cf = get_connection_file(p)
+    sp = sidecar_path_for_notebook(p)
+    sidecar_ok = sp is not None and sp.is_file()
+    env: dict[str, str] = {"JUPYLINK_IDE_NOTEBOOK_PATH": str(p)}
+    if cf:
+        env["JUPYLINK_IDE_CONNECTION_FILE"] = cf
+    return {
+        "notebook_path": str(p),
+        "connection_file": cf,
+        "sidecar_path": str(sp) if sp else None,
+        "sidecar_present": sidecar_ok,
+        "env_for_ide_jupyter_kernel": env,
+        "instructions": (
+            "The IDE often starts a *new* JupyLink process unless it bridges to this kernel. "
+            "Add `env_for_ide_jupyter_kernel` to the Python environment used by Jupyter in Cursor/VS Code "
+            "(Settings → Jupyter: Kernel Environment Variables, or the env file for the selected interpreter), "
+            "then pick the JupyLink kernel for this notebook. "
+            "Values must match the machine where the notebook file lives (same as MCP). "
+            "If `connection_file` is null, run execute once via MCP first so the kernel registers."
+        ),
+    }
 
 
 @mcp.tool()
@@ -179,7 +178,9 @@ def jupylink_execute_cell(cell_id: str, notebook_path: str | None = None) -> str
     result = execute_cell(path, cell_id)
     if result is None:
         return json.dumps({"error": f"Cell not found or execution failed: {cell_id}"})
-    return json.dumps(result, ensure_ascii=False, indent=2)
+    out = dict(result)
+    out["jupylink_ide_reuse"] = _ide_bridge_hint(path)
+    return json.dumps(out, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()
@@ -223,6 +224,20 @@ def jupylink_list_kernels() -> str:
     """
     kernels = list_kernels()
     return json.dumps(kernels, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def jupylink_get_ide_bridge_env(notebook_path: str | None = None) -> str:
+    """Return env vars so the IDE JupyLink kernel bridges to the MCP kernel for this notebook.
+
+    Without these on the Jupyter interpreter, Cursor/VS Code usually spawns a *second* kernel:
+    variables and execution state from MCP will not match the IDE session.
+
+    After MCP has run at least one cell (or the JupyLink kernel registered), `connection_file`
+    points at the live kernel JSON; set `env_for_ide_jupyter_kernel` on the **same host** as the notebook.
+    """
+    path = _resolve_notebook(notebook_path)
+    return json.dumps(_ide_bridge_hint(path), ensure_ascii=False, indent=2)
 
 
 @mcp.tool()

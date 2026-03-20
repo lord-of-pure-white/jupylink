@@ -8,3 +8,4 @@ build/
 pytest_tmp/
 *_record.csv
 *.jupylink_kernel.json
+.jupylink/

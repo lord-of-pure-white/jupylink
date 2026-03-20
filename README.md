@@ -29,7 +29,8 @@ jupyter kernelspec install kernels/jupylink
 | Symptom | Things to check |
 |--------|------------------|
 | MCP “doesn’t know” the open notebook | MCP has no editor API; set `-n` / `JUPYLINK_DEFAULT_NOTEBOOK` / `JUPYLINK_ACTIVE_NOTEBOOK` or `.jupylink/active_notebook`. |
-| IDE bridges to the wrong kernel | Set `JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT=1` so sole-registry reuse needs a notebook env hint; or set `JUPYLINK_IDE_NOTEBOOK_PATH` to the `.ipynb`. |
+| IDE bridges to the wrong kernel | User dir `last_active_notebook` (next to `kernels.json`) + workspace `.jupylink/active_notebook` are updated on MCP execute; IDE reads them without extra env. Or set `JUPYLINK_IDE_NOTEBOOK_PATH` / `JUPYLINK_IDE_CONNECTION_FILE`. |
+| Two kernels for one notebook | Default: new `register` shuts down the previous connection (`JUPYLINK_REGISTER_SHUTDOWN_PREDECESSOR=1`). Disable with `=0` only if needed. |
 | Stuck “Connecting” / wrong bridge | Stale `kernel-*.json`: probe fails → no bridge; try `JUPYLINK_IDE_REUSE=0` or `JUPYLINK_IDE_CONNECTION_PROBE=0` (last skips live check). Tune `JUPYLINK_IDE_PROBE_TIMEOUT`. |
 | Cell runs but UI stays busy a long time | Record write is async by default; set `JUPYLINK_RECORD_SYNC_AFTER_EXECUTE=1` to restore wait-for-disk before `execute_reply` (slower but stricter). |
 | `python -m jupylink --help` looks like ipykernel | Without `-f`, `--help` now prints JupyLink text; use `jupylink --help` for the CLI. |
@@ -122,10 +123,11 @@ Configure `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 - `jupylink_write_cell` — Write content to cell
 - `jupylink_create_cell` — Create new cell
 - `jupylink_delete_cell` — Delete cell
-- `jupylink_execute_cell` — Execute single cell
+- `jupylink_execute_cell` — Execute single cell (response includes `jupylink_ide_reuse` for IDE kernel env)
 - `jupylink_execute_cells` — Execute multiple cells (same kernel, for dependent cells)
 - `jupylink_list_cells` — List all cells
 - `jupylink_list_kernels` — List running kernels and their notebook files
+- `jupylink_get_ide_bridge_env` — Env block (`JUPYLINK_IDE_NOTEBOOK_PATH`, optional `JUPYLINK_IDE_CONNECTION_FILE`) so the IDE JupyLink kernel bridges to the MCP kernel
 - `jupylink_get_record` — Get agent-friendly .py record content
 - `jupylink_sync_record` — Sync record (merge ipynb with execution history; same as CLI `record`)
 - `jupylink_get_status` — Lightweight status summary (read-only, no side effects)

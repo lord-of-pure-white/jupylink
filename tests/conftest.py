@@ -11,6 +11,14 @@ import pytest
 from jupylink import kernel_registry as _kr
 
 
+@pytest.fixture(autouse=True)
+def _jupylink_user_state_per_test(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate ``kernels.json`` / ``last_active_notebook`` per test (no real ``~/.jupylink``)."""
+    reg = tmp_path / "_jupylink_user" / "kernels.json"
+    reg.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(_kr, "_registry_path", _make_registry_path_fn(reg))
+
+
 def _make_registry_path_fn(reg: Path):
     def _fn() -> Path:
         return reg

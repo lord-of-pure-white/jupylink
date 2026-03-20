@@ -120,7 +120,7 @@ def test_register_writes_sidecar_next_to_notebook(isolated_registry, tmp_path):
     assert data["connection_file"] == str(cf.resolve())
 
 
-def test_register_dedupes_alias_keys(isolated_registry, tmp_path):
+def test_register_dedupes_alias_keys(isolated_registry, tmp_path, monkeypatch):
     nb = tmp_path / "n.ipynb"
     nb.write_text("{}", encoding="utf-8")
     cf1 = tmp_path / "k1.json"
@@ -128,9 +128,36 @@ def test_register_dedupes_alias_keys(isolated_registry, tmp_path):
     cf1.write_text("{}", encoding="utf-8")
     cf2.write_text("{}", encoding="utf-8")
 
+    monkeypatch.setattr(kr, "_shutdown_kernel_via_connection_file", lambda _cf: None)
     ssh_key = _ssh_remote_style_path(nb)
     kr.register(ssh_key, str(cf1))
     kr.register(nb, str(cf2))
     data = json.loads(isolated_registry.read_text(encoding="utf-8"))
     assert len(data["kernels"]) == 1
     assert kr.get_connection_file(nb) == str(cf2.resolve())
+
+
+def test_register_replaces_predecessor_shutdown_called(isolated_registry, tmp_path, monkeypatch):
+    nb = tmp_path / "n.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    cf1 = tmp_path / "k1.json"
+    cf2 = tmp_path / "k2.json"
+    cf1.write_text("{}", encoding="utf-8")
+    cf2.write_text("{}", encoding="utf-8")
+    called: list[str] = []
+    monkeypatch.setattr(kr, "_shutdown_kernel_via_connection_file", lambda cf: called.append(cf))
+    monkeypatch.setenv("JUPYLINK_REGISTER_SHUTDOWN_PREDECESSOR", "1")
+    kr.register(nb, str(cf1))
+    kr.register(nb, str(cf2))
+    assert len(called) == 1
+    assert Path(called[0]).resolve() == cf1.resolve()
+
+
+def test_write_active_notebook_hint_writes_user_last_active(isolated_registry, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    nb = tmp_path / "n.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    kr.write_active_notebook_hint(nb)
+    last = kr.user_jupylink_dir() / "last_active_notebook"
+    assert last.is_file()
+    assert last.read_text(encoding="utf-8").strip() == str(nb.resolve())

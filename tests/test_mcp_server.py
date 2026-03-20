@@ -17,6 +17,7 @@ from jupylink.mcp_server import (
     _resource_record_json,
     jupylink_execute_cell,
     jupylink_execute_cells,
+    jupylink_get_ide_bridge_env,
     jupylink_get_record,
     jupylink_get_status,
     jupylink_list_cells,
@@ -105,14 +106,20 @@ class TestMCPResources:
         assert "id,cell_type,status" in result
         assert "x = 42" in result
 
-    def test_resource_record_json_no_notebook(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_resource_record_json_no_notebook(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(mcp_server, "_bound_notebook", None)
         result = _resource_record_json()
         data = json.loads(result)
         assert "error" in data
         assert "No notebook bound" in data["error"]
 
-    def test_resource_record_csv_no_notebook(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_resource_record_csv_no_notebook(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(mcp_server, "_bound_notebook", None)
         result = _resource_record_csv()
         assert "error" in result
@@ -199,6 +206,11 @@ class TestMCPExecute:
         assert "error" not in result
         assert result.get("status") == "ok"
         assert "execution_count" in result
+        hint = result.get("jupylink_ide_reuse")
+        assert isinstance(hint, dict)
+        assert hint.get("notebook_path")
+        assert "env_for_ide_jupyter_kernel" in hint
+        assert hint["env_for_ide_jupyter_kernel"].get("JUPYLINK_IDE_NOTEBOOK_PATH")
 
     def test_execute_multiple_cells_same_kernel(
         self, tmp_notebook: Path, monkeypatch: pytest.MonkeyPatch
@@ -270,3 +282,17 @@ class TestActiveNotebookHint:
             assert len(cells) >= 1
         finally:
             monkeypatch.delenv("JUPYLINK_ACTIVE_NOTEBOOK", raising=False)
+
+
+class TestIdeBridgeEnv:
+    """jupylink_get_ide_bridge_env returns env for IDE kernel to match MCP."""
+
+    def test_returns_notebook_and_env_block(
+        self, tmp_notebook: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(mcp_server, "_bound_notebook", tmp_notebook)
+        data = json.loads(jupylink_get_ide_bridge_env())
+        assert data["notebook_path"] == str(tmp_notebook.resolve())
+        env = data["env_for_ide_jupyter_kernel"]
+        assert env["JUPYLINK_IDE_NOTEBOOK_PATH"] == str(tmp_notebook.resolve())
+        assert "instructions" in data
