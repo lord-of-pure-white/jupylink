@@ -150,7 +150,8 @@ jupylink_sync_record()
 
 ```bash
 pip install -e .
-jupyter kernelspec install kernels/jupylink
+jupylink install-kernelspec
+# or: jupyter kernelspec install kernels/jupylink  (uses bare ``python`` in argv)
 ```
 
 ## 1. CLI
@@ -168,6 +169,7 @@ Entry: `jupylink <command> <notebook> [args]`
 | `record` | notebook | — | sync message |
 | `list-kernels` | — | — | running kernels: notebook_path, connection_file |
 | `cleanup-kernels` | — | — | removed count |
+| `install-kernelspec` | — | `--user` / `--system`, `--replace` | Installs spec with `sys.executable` (venv-safe) |
 | `serve` | — | `-p PORT`, `-n notebook` | MCP server |
 
 **Create-cell index**: 0-based; omit to append. `index=N` inserts before cell N. Clamped to [0, len(cells)].
@@ -290,6 +292,13 @@ If **MCP/CLI already started** a JupyLink kernel and registered it, the IDE can 
   - `JUPYLINK_IDE_SIDECAR_ROOT`: Extra directory to scan for sidecars (in addition to cwd and the hinted notebook’s parent).
   - `JUPYLINK_IDE_CONNECTION_PROBE=0`: Skip the short heartbeat check before bridging (faster; may attach to dead kernels if JSON files linger).
   - **Registry single + notebook hint**: If `JUPYTER_NOTEBOOK_PATH` / `JUPYLINK_IDE_NOTEBOOK_PATH` / `JPY_SESSION_NAME` points at a real `.ipynb`, the sole registry entry is used only when its notebook matches that path (avoids bridging the wrong kernel).
+  - `JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT=1`: If set, never use “sole registry entry” bridging unless one of those env vars resolves to an existing `.ipynb` (stricter when the IDE does not export a path).
+  - `JUPYLINK_IDE_PROBE_TIMEOUT`: Seconds for pre-bridge heartbeat probe (default `0.6`).
+- **Kernel record / UI responsiveness** (JupyLink kernel process):
+  - By default, `_record.*` writes run in a **background thread** after `execute_reply` so the cell can finish in the UI without waiting for disk + `notebook_lock`.
+  - `JUPYLINK_RECORD_SYNC_AFTER_EXECUTE=1`: Wait for record write before returning from `do_execute` (older behavior; can make the cell look “stuck” on large notebooks or lock contention).
+
+**`python -m jupylink --help`**: Without `-f`, prints JupyLink help (not ipykernel). Use `jupylink --help` for CLI. Prefer `jupylink install-kernelspec` over copying `kernels/jupylink` if `python` on PATH is not your venv.
 
 ## IDE Refresh
 

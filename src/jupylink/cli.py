@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
+import sys
+import tempfile
 from pathlib import Path
 
 import typer
@@ -183,6 +186,46 @@ def serve(
     from .mcp_server import run_mcp_server
 
     run_mcp_server(port=port, notebook_path=notebook)
+
+
+@app.command("install-kernelspec")
+def install_kernelspec_cmd(
+    user: bool = typer.Option(
+        True,
+        "--user/--system",
+        help="Install for current user (default) or system-wide",
+    ),
+    replace: bool = typer.Option(
+        True,
+        "--replace/--no-replace",
+        help="Replace an existing jupylink kernelspec",
+    ),
+) -> None:
+    """Install Jupyter kernelspec using sys.executable (avoids wrong 'python' outside venv)."""
+    from jupyter_client.kernelspec import KernelSpecManager
+
+    tmp_root = Path(tempfile.mkdtemp(prefix="jupylink-kspec-"))
+    spec_dir = tmp_root / "jupylink"
+    try:
+        spec_dir.mkdir(parents=True)
+        kernel_json = {
+            "argv": [sys.executable, "-m", "jupylink", "-f", "{connection_file}"],
+            "display_name": "JupyLink",
+            "language": "python",
+        }
+        (spec_dir / "kernel.json").write_text(
+            json.dumps(kernel_json, indent=2),
+            encoding="utf-8",
+        )
+        KernelSpecManager().install_kernel_spec(
+            str(spec_dir),
+            kernel_name="jupylink",
+            user=user,
+            replace=replace,
+        )
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+    typer.echo(f"Installed kernelspec 'jupylink' using: {sys.executable}")
 
 
 def main() -> None:

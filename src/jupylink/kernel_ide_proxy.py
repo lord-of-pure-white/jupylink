@@ -34,12 +34,20 @@ def parse_connection_file_from_argv(argv: list[str]) -> str | None:
     return None
 
 
-def probe_kernel_connection_file(connection_file: str, timeout: float = 0.6) -> bool:
+def probe_kernel_connection_file(connection_file: str, timeout: float | None = None) -> bool:
     """Return True if a kernel appears to answer on the heartbeat channel.
 
     Connection JSON may still exist on disk after the process exits; this weeds out
     most dead kernels without blocking the IDE proxy loop (used only at bridge resolve).
+
+    Timeout defaults to ``JUPYLINK_IDE_PROBE_TIMEOUT`` (seconds, default ``0.6``).
     """
+    if timeout is None:
+        try:
+            timeout = float(os.environ.get("JUPYLINK_IDE_PROBE_TIMEOUT", "0.6").strip())
+        except (ValueError, TypeError):
+            timeout = 0.6
+
     try:
         from jupyter_client.blocking.client import BlockingKernelClient
     except ImportError:
@@ -250,6 +258,10 @@ def discover_connection_via_registry_single(frontend_cf: Path) -> str | None:
     When ``JUPYTER_NOTEBOOK_PATH`` / ``JUPYLINK_IDE_NOTEBOOK_PATH`` / ``JPY_SESSION_NAME``
     points at a real notebook, the sole registry entry must be for that notebook (same
     canonical path); otherwise we avoid bridging the IDE to the wrong kernel.
+
+    Set ``JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT=1`` to refuse sole-registry
+    bridging when none of those env vars resolve to a file (avoids wrong-kernel reuse
+    when the IDE did not export a notebook path).
     """
     if os.environ.get("JUPYLINK_IDE_REGISTRY_SINGLE", "1").strip().lower() in (
         "0",
@@ -266,7 +278,14 @@ def discover_connection_via_registry_single(frontend_cf: Path) -> str | None:
         return None
     hint = _explicit_ide_notebook_file()
     nb_reg = kernels[0]["notebook_path"]
-    if hint is not None and _normalize(nb_reg) != _normalize(hint):
+    if hint is not None:
+        if _normalize(nb_reg) != _normalize(hint):
+            return None
+    elif os.environ.get("JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
         return None
     cf = kernels[0].get("connection_file")
     if not cf:

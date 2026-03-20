@@ -18,8 +18,21 @@ Jupyter kernel proxy that generates agent-friendly execution records from ipynb.
 
 ```bash
 pip install -e .
+# Prefer venv-safe interpreter path (recommended):
+jupylink install-kernelspec
+# Or copy the bundled spec (argv uses bare ``python`` — may not be your venv):
 jupyter kernelspec install kernels/jupylink
 ```
+
+### IDE / bridge / MCP troubleshooting (short)
+
+| Symptom | Things to check |
+|--------|------------------|
+| MCP “doesn’t know” the open notebook | MCP has no editor API; set `-n` / `JUPYLINK_DEFAULT_NOTEBOOK` / `JUPYLINK_ACTIVE_NOTEBOOK` or `.jupylink/active_notebook`. |
+| IDE bridges to the wrong kernel | Set `JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT=1` so sole-registry reuse needs a notebook env hint; or set `JUPYLINK_IDE_NOTEBOOK_PATH` to the `.ipynb`. |
+| Stuck “Connecting” / wrong bridge | Stale `kernel-*.json`: probe fails → no bridge; try `JUPYLINK_IDE_REUSE=0` or `JUPYLINK_IDE_CONNECTION_PROBE=0` (last skips live check). Tune `JUPYLINK_IDE_PROBE_TIMEOUT`. |
+| Cell runs but UI stays busy a long time | Record write is async by default; set `JUPYLINK_RECORD_SYNC_AFTER_EXECUTE=1` to restore wait-for-disk before `execute_reply` (slower but stricter). |
+| `python -m jupylink --help` looks like ipykernel | Without `-f`, `--help` now prints JupyLink text; use `jupylink --help` for the CLI. |
 
 ## Usage
 

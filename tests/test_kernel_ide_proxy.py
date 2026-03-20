@@ -16,7 +16,7 @@ from jupylink import kernel_registry as kr
 @pytest.fixture(autouse=True)
 def _ide_bridge_probe_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     """Unit tests use fake connection JSON; skip real ZMQ heartbeat probes."""
-    monkeypatch.setattr(kip, "probe_kernel_connection_file", lambda path, timeout=0.6: True)
+    monkeypatch.setattr(kip, "probe_kernel_connection_file", lambda *args, **kwargs: True)
 
 
 def test_parse_connection_file_from_argv() -> None:
@@ -102,6 +102,23 @@ def test_resolve_via_registry(isolated_registry, tmp_path, monkeypatch) -> None:
     kr.register(nb, str(cf))
     got = kip.resolve_existing_connection_for_ide(str(fe))
     assert got == str(cf.resolve())
+
+
+def test_registry_single_require_notebook_hint_blocks_unhinted(
+    isolated_registry, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
+    monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE", "1")
+    monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT", "1")
+    nb = tmp_path / "n.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    cf = tmp_path / "k.json"
+    cf.write_text("{}", encoding="utf-8")
+    fe = tmp_path / "front.json"
+    fe.write_text("{}", encoding="utf-8")
+    kr.register(nb, str(cf))
+    assert kip.discover_connection_via_registry_single(fe.resolve()) is None
+    monkeypatch.delenv("JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT", raising=False)
 
 
 def test_registry_single_skips_when_env_notebook_differs(

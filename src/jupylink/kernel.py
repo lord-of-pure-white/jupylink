@@ -8,6 +8,7 @@ import hashlib
 import logging
 import os
 import sys
+import threading
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -117,6 +118,7 @@ class JupyLinkKernel(IPythonKernel):
         self._capturing = False
         self._captured_output: list[dict[str, Any]] = []
         self._registered_for_cli = False
+        self._record_pipeline_lock = threading.Lock()
         self._setup_notebook_path()
         self._wrap_streams_for_capture()
 
@@ -262,11 +264,41 @@ class JupyLinkKernel(IPythonKernel):
             captured = self._stop_capture()
         if reply is not None:
             self._register_for_cli()  # ensure registered when we have notebook_path
-            # Disk + filelock off the asyncio loop so "Run All" / queued executes stay responsive.
-            await asyncio.to_thread(
-                self._record_execution, code, reply, cell_id, cell_meta, captured
+            sync = os.environ.get("JUPYLINK_RECORD_SYNC_AFTER_EXECUTE", "0").strip().lower() in (
+                "1",
+                "true",
+                "yes",
             )
+            if sync:
+                await asyncio.to_thread(
+                    self._record_execution_locked,
+                    code,
+                    reply,
+                    cell_id,
+                    cell_meta,
+                    captured,
+                )
+            else:
+                threading.Thread(
+                    target=self._record_execution_locked,
+                    args=(code, reply, cell_id, cell_meta, captured),
+                    daemon=True,
+                ).start()
         return reply
+
+    def _record_execution_locked(
+        self,
+        code: str,
+        reply: dict[str, Any],
+        cell_id: str | None,
+        cell_meta: dict | None,
+        captured_output: list[dict[str, Any]] | None,
+    ) -> None:
+        try:
+            with self._record_pipeline_lock:
+                self._record_execution(code, reply, cell_id, cell_meta, captured_output)
+        except Exception:
+            logger.exception("Record write failed")
 
     def _record_execution(
         self,
