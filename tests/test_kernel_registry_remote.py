@@ -23,6 +23,25 @@ def test_strip_embedded_ssh_remote_prefix():
     assert _strip_vscode_remote_filesystem_path(embedded) == plain
 
 
+def test_strip_file_url_wrapping_ssh_remote_path():
+    from jupylink.kernel_registry import _strip_vscode_remote_filesystem_path
+
+    hex_cfg = "7b22686f73744e616d65223a223137322e31362e31392e35227d"
+    plain = "/share/home/kangxinyu/test/test_jupylink.ipynb"
+    embedded = f"/ssh-remote+{hex_cfg}{plain}"
+    file_url = f"file://{embedded}"
+    assert _strip_vscode_remote_filesystem_path(file_url) == plain
+
+
+def test_strip_ssh_remote_without_leading_slash():
+    from jupylink.kernel_registry import _strip_vscode_remote_filesystem_path
+
+    hex_cfg = "7b22686f73744e616d65223a223137322e31362e31392e35227d"
+    plain = "/share/home/kangxinyu/test/x.ipynb"
+    embedded = f"ssh-remote+{hex_cfg}{plain}"
+    assert _strip_vscode_remote_filesystem_path(embedded) == plain
+
+
 def test_strip_vscode_remote_ssh_uri():
     from jupylink.kernel_registry import _strip_vscode_remote_filesystem_path
 

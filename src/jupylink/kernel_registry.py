@@ -51,6 +51,8 @@ def _registry_path() -> Path:
 
 
 _SSH_REMOTE_PATH_PREFIX = re.compile(r"^/ssh-remote\+[^/]+")
+# Same token, but some clients omit the leading slash (rare).
+_SSH_REMOTE_PATH_PREFIX_REL = re.compile(r"^ssh-remote\+[^/]+")
 
 
 def _strip_vscode_remote_filesystem_path(path_str: str) -> str:
@@ -60,12 +62,22 @@ def _strip_vscode_remote_filesystem_path(path_str: str) -> str:
     - ``/share/home/user/x.ipynb`` (plain)
     - ``/ssh-remote+7b22.../share/home/user/x.ipynb`` (authority embedded in path)
     - ``vscode-remote://ssh-remote+7b22.../share/home/user/x.ipynb``
+    - ``file:///ssh-remote+7b22.../share/.../x.ipynb`` (file URL wrapping the pseudo path)
 
     Registry keys must match across these forms so CLI/MCP reuse the IDE kernel.
     """
     s = path_str.strip()
     if not s:
         return s
+    # Peel file: (so /ssh-remote+... embedded in file:// path is visible to rules below)
+    if s.lower().startswith("file:"):
+        try:
+            parsed = urllib.parse.urlparse(s)
+            inner = urllib.parse.unquote(parsed.path or "")
+            if inner and inner != s:
+                s = inner
+        except Exception:
+            pass
     if s.lower().startswith("vscode-remote:"):
         try:
             parsed = urllib.parse.urlparse(s)
@@ -79,6 +91,13 @@ def _strip_vscode_remote_filesystem_path(path_str: str) -> str:
     m = _SSH_REMOTE_PATH_PREFIX.match(s)
     if m:
         tail = s[m.end() :]
+        if not tail.startswith("/"):
+            tail = f"/{tail}"
+        tail = _fix_windows_leading_slash_drive(tail)
+        return tail
+    m2 = _SSH_REMOTE_PATH_PREFIX_REL.match(s)
+    if m2:
+        tail = s[m2.end() :]
         if not tail.startswith("/"):
             tail = f"/{tail}"
         tail = _fix_windows_leading_slash_drive(tail)

@@ -79,10 +79,17 @@ class RecordManager:
         """Set the notebook path (from magic or env)."""
         self.notebook_path = resolve_notebook_filesystem_path(path)
 
+    def _sync_notebook_path_for_fs(self) -> None:
+        """Re-normalize stored path before any disk I/O (handles ssh-remote / file: variants)."""
+        if not self.notebook_path:
+            return
+        self.notebook_path = resolve_notebook_filesystem_path(self.notebook_path)
+
     def load_from_record_file(self) -> bool:
         """Load execution data from existing record JSON. Returns True if loaded."""
         if not self.notebook_path:
             return False
+        self._sync_notebook_path_for_fs()
         json_path = self.notebook_path.parent / f"{self.notebook_path.stem}_record.json"
         if not json_path.exists():
             return False
@@ -120,7 +127,10 @@ class RecordManager:
         in ipynb but not in record are added. Returns number of cells merged.
         Fixes desync when cells were run in UI but kernel didn't record (e.g. path not set).
         """
-        if not self.notebook_path or not self.notebook_path.exists():
+        if not self.notebook_path:
+            return 0
+        self._sync_notebook_path_for_fs()
+        if not self.notebook_path.exists():
             return 0
         try:
             nb = nbformat.read(self.notebook_path, as_version=nbformat.NO_CONVERT)
@@ -385,7 +395,10 @@ class RecordManager:
         generate new random ids for old-format notebooks, causing mismatch with
         frontend's cellId.
         """
-        if not self.notebook_path or not self.notebook_path.exists():
+        if not self.notebook_path:
+            return []
+        self._sync_notebook_path_for_fs()
+        if not self.notebook_path.exists():
             return []
         try:
             try:
@@ -479,6 +492,7 @@ class RecordManager:
         """Write record .py, .json and .csv files."""
         if not self.notebook_path:
             return
+        self._sync_notebook_path_for_fs()
         stem = self.notebook_path.stem
         base_dir = self.notebook_path.parent
         py_path = base_dir / f"{stem}_record.py"
