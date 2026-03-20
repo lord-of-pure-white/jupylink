@@ -69,21 +69,30 @@ class RecordManager:
     """Manages execution record, merges kernel results with ipynb, writes output files."""
 
     def __init__(self, notebook_path: str | Path | None = None):
-        self.notebook_path = (
-            resolve_notebook_filesystem_path(notebook_path) if notebook_path else None
-        )
+        self.notebook_path: Path | None = None
+        if notebook_path:
+            try:
+                self.notebook_path = resolve_notebook_filesystem_path(notebook_path)
+            except (OSError, ValueError) as e:
+                logger.warning("Ignoring invalid initial notebook path %r: %s", notebook_path, e)
         self._execution_records: list[dict[str, Any]] = []  # each execution in order (repeats kept)
         self._execution_log: list[dict[str, str]] = []  # ordered execution timeline
 
     def set_notebook_path(self, path: str | Path) -> None:
         """Set the notebook path (from magic or env)."""
-        self.notebook_path = resolve_notebook_filesystem_path(path)
+        try:
+            self.notebook_path = resolve_notebook_filesystem_path(path)
+        except (OSError, ValueError) as e:
+            logger.warning("Ignoring invalid notebook path %r: %s", path, e)
 
     def _sync_notebook_path_for_fs(self) -> None:
         """Re-normalize stored path before any disk I/O (handles ssh-remote / file: variants)."""
         if not self.notebook_path:
             return
-        self.notebook_path = resolve_notebook_filesystem_path(self.notebook_path)
+        try:
+            self.notebook_path = resolve_notebook_filesystem_path(self.notebook_path)
+        except (OSError, ValueError) as e:
+            logger.warning("Could not normalize notebook path %r: %s", self.notebook_path, e)
 
     def load_from_record_file(self) -> bool:
         """Load execution data from existing record JSON. Returns True if loaded."""

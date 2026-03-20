@@ -617,5 +617,12 @@ def maybe_run_ide_proxy_from_argv(argv: list[str] | None = None) -> bool:
     logger.info(
         "JupyLink: bridging IDE connection file to existing kernel (set JUPYLINK_IDE_REUSE=0 to disable)"
     )
-    run_ide_proxy(frontend_cf, existing)
+    try:
+        run_ide_proxy(frontend_cf, existing)
+    except Exception:
+        logger.exception(
+            "IDE bridge failed (bind/connect/upstream); falling back to in-process kernel. "
+            "Disable reuse with JUPYLINK_IDE_REUSE=0 if this persists."
+        )
+        return False
     return True
