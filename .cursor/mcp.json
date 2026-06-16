@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "jupylink": {
-      "command": "E:\\projects\\jupytest\\.venv\\Scripts\\jupylink.exe",
-      "args": ["serve", "-n", "test.ipynb"]
-    }
-  }
-}
