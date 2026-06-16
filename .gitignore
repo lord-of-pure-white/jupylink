@@ -9,3 +9,9 @@ pytest_tmp/
 *_record.csv
 *.jupylink_kernel.json
 .jupylink/
+
+# Local test / session artifacts
+test*.ipynb
+test*_record.*
+.claude/plans/
+.claude/rules/
