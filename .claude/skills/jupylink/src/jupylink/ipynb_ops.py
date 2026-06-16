@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional, Union
 
 import nbformat
 from nbformat.notebooknode import from_dict
@@ -17,7 +17,7 @@ from .notify_ide import request_notebook_refresh
 logger = logging.getLogger(__name__)
 
 
-def _normalize_source(source: str | list[str]) -> str:
+def _normalize_source(source: Union[str, list[str]]) -> str:
     """Normalize cell source to string."""
     if isinstance(source, list):
         return "".join(source)
@@ -32,7 +32,7 @@ def _read_nb(path: Path) -> nbformat.NotebookNode:
         return nbformat.read(path, as_version=4)
 
 
-def _to_source(value: str, existing_source: str | list[str] | None = None) -> str | list[str]:
+def _to_source(value: str, existing_source: Optional[Union[str, list[str]]] = None) -> Union[str, list[str]]:
     """Convert content to notebook source format, preserving the existing format.
 
     If the cell previously stored source as a string, keeps string format.
@@ -45,7 +45,7 @@ def _to_source(value: str, existing_source: str | list[str] | None = None) -> st
     return text.splitlines(keepends=True) if text else []
 
 
-def write_cell(notebook_path: str | Path, cell_id: str, content: str) -> bool:
+def write_cell(notebook_path: Union[str, Path], cell_id: str, content: str) -> bool:
     """Write content to the specified cell by cell_id.
 
     Returns True on success, False if cell not found.
@@ -65,11 +65,11 @@ def write_cell(notebook_path: str | Path, cell_id: str, content: str) -> bool:
 
 
 def create_cell(
-    notebook_path: str | Path,
+    notebook_path: Union[str, Path],
     cell_type: Literal["code", "markdown", "raw"] = "code",
-    index: int | None = None,
+    index: Optional[int] = None,
     source: str = "",
-) -> str | None:
+) -> Optional[str]:
     """Create a new cell in the notebook.
 
     Returns the new cell's id on success, None on failure.
@@ -101,7 +101,7 @@ def create_cell(
         return cell_id
 
 
-def delete_cell(notebook_path: str | Path, cell_id: str) -> bool:
+def delete_cell(notebook_path: Union[str, Path], cell_id: str) -> bool:
     """Delete the cell with the given cell_id.
 
     Returns True on success, False if cell not found.
@@ -120,7 +120,7 @@ def delete_cell(notebook_path: str | Path, cell_id: str) -> bool:
     return False
 
 
-def get_cell_source(notebook_path: str | Path, cell_id: str) -> str | None:
+def get_cell_source(notebook_path: Union[str, Path], cell_id: str) -> Optional[str]:
     """Get the source of a cell by cell_id. Returns None if not found."""
     path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
@@ -166,10 +166,10 @@ def _captured_to_nbformat_output(item: dict) -> dict:
 
 
 def update_cell_output(
-    notebook_path: str | Path,
+    notebook_path: Union[str, Path],
     cell_id: str,
     output: list[dict],
-    execution_count: int | None = None,
+    execution_count: Optional[int] = None,
 ) -> bool:
     """Write execution output to the ipynb cell so IDE displays it.
 
@@ -192,7 +192,7 @@ def update_cell_output(
     return False
 
 
-def list_cells(notebook_path: str | Path) -> list[dict]:
+def list_cells(notebook_path: Union[str, Path]) -> list[dict]:
     """List all cells with id, cell_type, source preview, and empty flag."""
     path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():

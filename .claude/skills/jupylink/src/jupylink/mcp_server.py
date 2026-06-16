@@ -7,7 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 from mcp.server.fastmcp import FastMCP
 
@@ -28,24 +28,24 @@ JUPYLINK_RECORD_JSON_URI = "jupylink://record/json"
 JUPYLINK_RECORD_CSV_URI = "jupylink://record/csv"
 
 # Default notebook when started with --notebook or JUPYLINK_DEFAULT_NOTEBOOK env
-_bound_notebook: Path | None = None
+_bound_notebook: Optional[Path] = None
 
 
-def _active_notebook_from_env_or_file() -> Path | None:
+def _active_notebook_from_env_or_file() -> Optional[Path]:
     """Optional notebook path for agents/IDE integration (not known to MCP protocol natively)."""
     from .kernel_registry import read_active_notebook_hint
 
     return read_active_notebook_hint(cwd=Path.cwd())
 
 
-def _effective_default_notebook() -> Path | None:
+def _effective_default_notebook() -> Optional[Path]:
     """Notebook used for tools/resources when no path is passed: CLI ``-n``, env, or active hint."""
     if _bound_notebook:
         return _bound_notebook
     return _active_notebook_from_env_or_file()
 
 
-def _get_notebook_path(notebook_path: str | None) -> Path:
+def _get_notebook_path(notebook_path: Optional[str]) -> Path:
     """Resolve notebook path: use arg, else bound default, else active hint, else raise."""
     if notebook_path and str(notebook_path).strip():
         return resolve_notebook_filesystem_path(notebook_path)
@@ -58,7 +58,7 @@ def _get_notebook_path(notebook_path: str | None) -> Path:
     )
 
 
-def _resolve_notebook(notebook_path: str | None) -> Path:
+def _resolve_notebook(notebook_path: Optional[str]) -> Path:
     p = _get_notebook_path(notebook_path)
     if not p.exists():
         raise ValueError(f"Notebook not found: {p}")
@@ -96,8 +96,8 @@ def _ide_bridge_hint(path: Path) -> dict[str, Any]:
 @mcp.tool()
 def jupylink_get_output(
     cell_id: str,
-    notebook_path: str | None = None,
-    execution_count: int | None = None,
+    notebook_path: Optional[str] = None,
+    execution_count: Optional[int] = None,
 ) -> str:
     """Get output for a cell by cell_id and optional execution_count.
 
@@ -114,7 +114,7 @@ def jupylink_get_output(
 
 
 @mcp.tool()
-def jupylink_write_cell(cell_id: str, content: str, notebook_path: str | None = None) -> str:
+def jupylink_write_cell(cell_id: str, content: str, notebook_path: Optional[str] = None) -> str:
     """Write content to the specified cell.
 
     Args:
@@ -131,9 +131,9 @@ def jupylink_write_cell(cell_id: str, content: str, notebook_path: str | None = 
 @mcp.tool()
 def jupylink_create_cell(
     cell_type: str = "code",
-    index: int | None = None,
+    index: Optional[int] = None,
     source: str = "",
-    notebook_path: str | None = None,
+    notebook_path: Optional[str] = None,
 ) -> str:
     """Create a new cell in the notebook.
 
@@ -153,7 +153,7 @@ def jupylink_create_cell(
 
 
 @mcp.tool()
-def jupylink_delete_cell(cell_id: str, notebook_path: str | None = None) -> str:
+def jupylink_delete_cell(cell_id: str, notebook_path: Optional[str] = None) -> str:
     """Delete the cell with the given cell_id.
 
     Args:
@@ -167,7 +167,7 @@ def jupylink_delete_cell(cell_id: str, notebook_path: str | None = None) -> str:
 
 
 @mcp.tool()
-def jupylink_execute_cell(cell_id: str, notebook_path: str | None = None) -> str:
+def jupylink_execute_cell(cell_id: str, notebook_path: Optional[str] = None) -> str:
     """Execute the specified cell.
 
     Args:
@@ -186,7 +186,7 @@ def jupylink_execute_cell(cell_id: str, notebook_path: str | None = None) -> str
 @mcp.tool()
 def jupylink_execute_cells(
     cell_ids: list[str],
-    notebook_path: str | None = None,
+    notebook_path: Optional[str] = None,
 ) -> str:
     """Execute multiple cells in sequence, reusing the same kernel.
 
@@ -204,7 +204,7 @@ def jupylink_execute_cells(
 
 
 @mcp.tool()
-def jupylink_list_cells(notebook_path: str | None = None) -> str:
+def jupylink_list_cells(notebook_path: Optional[str] = None) -> str:
     """List all cells with id, type, and source preview.
 
     Args:
@@ -227,7 +227,7 @@ def jupylink_list_kernels() -> str:
 
 
 @mcp.tool()
-def jupylink_get_ide_bridge_env(notebook_path: str | None = None) -> str:
+def jupylink_get_ide_bridge_env(notebook_path: Optional[str] = None) -> str:
     """Return env vars so the IDE JupyLink kernel bridges to the MCP kernel for this notebook.
 
     Without these on the Jupyter interpreter, Cursor/VS Code usually spawns a *second* kernel:
@@ -241,7 +241,7 @@ def jupylink_get_ide_bridge_env(notebook_path: str | None = None) -> str:
 
 
 @mcp.tool()
-def jupylink_get_record(notebook_path: str | None = None) -> str:
+def jupylink_get_record(notebook_path: Optional[str] = None) -> str:
     """Get the agent-friendly record (.py content) for the notebook.
 
     Args:
@@ -262,7 +262,7 @@ def jupylink_get_record(notebook_path: str | None = None) -> str:
 
 
 @mcp.tool()
-def jupylink_sync_record(notebook_path: str | None = None) -> str:
+def jupylink_sync_record(notebook_path: Optional[str] = None) -> str:
     """Sync the record files with the current notebook state.
 
     Re-merges ipynb cells with execution history and rewrites _record.py and _record.json.
@@ -285,7 +285,7 @@ def jupylink_sync_record(notebook_path: str | None = None) -> str:
 
 
 @mcp.tool()
-def jupylink_get_status(notebook_path: str | None = None) -> str:
+def jupylink_get_status(notebook_path: Optional[str] = None) -> str:
     """Get a lightweight status summary of notebook cells (read-only, no side effects).
 
     Returns each cell's id, status (ok/pending/empty/error/markdown), editable flag,
@@ -402,7 +402,7 @@ def _resource_record_csv() -> str:
     return "error,Record not found"
 
 
-def run_mcp_server(port: int = 0, notebook_path: str | None = None) -> None:
+def run_mcp_server(port: int = 0, notebook_path: Optional[str] = None) -> None:
     """Run the MCP server. Uses stdio transport for Cursor (port=0)."""
     import sys
 

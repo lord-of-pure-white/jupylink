@@ -1,0 +1,5 @@
+{
+  "argv": ["python2", "-m", "jupylink", "-f", "{connection_file}"],
+  "display_name": "JupyLink (Python 2)",
+  "language": "python"
+}

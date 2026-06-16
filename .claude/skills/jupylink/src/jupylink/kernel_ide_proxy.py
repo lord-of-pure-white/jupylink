@@ -13,7 +13,7 @@ import os
 import sys
 from collections import deque
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 import zmq
 from jupyter_client.session import Session
@@ -21,7 +21,7 @@ from jupyter_client.session import Session
 logger = logging.getLogger(__name__)
 
 
-def parse_connection_file_from_argv(argv: list[str]) -> str | None:
+def parse_connection_file_from_argv(argv: list[str]) -> Optional[str]:
     """Extract ``-f`` / ``--f=`` path from argv (ipykernel / VS Code style)."""
     i = 0
     while i < len(argv):
@@ -34,7 +34,7 @@ def parse_connection_file_from_argv(argv: list[str]) -> str | None:
     return None
 
 
-def probe_kernel_connection_file(connection_file: str, timeout: float | None = None) -> bool:
+def probe_kernel_connection_file(connection_file: str, timeout: Optional[float] = None) -> bool:
     """Return True if a kernel appears to answer on the heartbeat channel.
 
     Connection JSON may still exist on disk after the process exits; this weeds out
@@ -93,7 +93,7 @@ def _url(cfg: dict[str, Any], port_key: str) -> str:
     return f"{transport}://{ip}-{port}"
 
 
-def _explicit_ide_notebook_file() -> Path | None:
+def _explicit_ide_notebook_file() -> Optional[Path]:
     """Notebook path from IDE/Jupyter env (not ``JUPYLINK_IDE_REUSE_UNIQUE``)."""
     from .kernel_registry import read_active_notebook_hint, resolve_notebook_filesystem_path
 
@@ -114,7 +114,7 @@ def _explicit_ide_notebook_file() -> Path | None:
     return read_active_notebook_hint(cwd=Path.cwd())
 
 
-def _ide_notebook_path_for_reuse() -> Path | None:
+def _ide_notebook_path_for_reuse() -> Optional[Path]:
     from .kernel_registry import read_active_notebook_hint, resolve_notebook_filesystem_path
 
     for key in ("JUPYLINK_IDE_NOTEBOOK_PATH", "JUPYTER_NOTEBOOK_PATH"):
@@ -215,7 +215,7 @@ def _sidecar_scan_roots() -> list[Path]:
     return out
 
 
-def discover_connection_via_workspace_sidecars(frontend_cf: Path) -> str | None:
+def discover_connection_via_workspace_sidecars(frontend_cf: Path) -> Optional[str]:
     """Resolve upstream connection via sidecar next to the notebook or under scan roots.
 
     Prefer an explicit notebook env (``JUPYTER_NOTEBOOK_PATH``, etc.): read that
@@ -268,7 +268,7 @@ def discover_connection_via_workspace_sidecars(frontend_cf: Path) -> str | None:
     return None
 
 
-def discover_connection_via_registry_single(frontend_cf: Path) -> str | None:
+def discover_connection_via_registry_single(frontend_cf: Path) -> Optional[str]:
     """If the global registry has exactly one live kernel, use it when it matches hints.
 
     When ``JUPYTER_NOTEBOOK_PATH`` / ``JUPYLINK_IDE_NOTEBOOK_PATH`` / ``JPY_SESSION_NAME``
@@ -312,7 +312,7 @@ def discover_connection_via_registry_single(frontend_cf: Path) -> str | None:
     return str(p)
 
 
-def discover_connection_via_registry_unique_live(frontend_cf: Path) -> str | None:
+def discover_connection_via_registry_unique_live(frontend_cf: Path) -> Optional[str]:
     """When several kernels are registered but only one still answers HB, bridge to that one.
 
     Stale ``kernels.json`` rows may keep paths to dead JSON files; the probe drops them.
@@ -364,7 +364,7 @@ def discover_connection_via_registry_unique_live(frontend_cf: Path) -> str | Non
     return None
 
 
-def resolve_existing_connection_for_ide(frontend_cf: str) -> str | None:
+def resolve_existing_connection_for_ide(frontend_cf: str) -> Optional[str]:
     """Return path to an existing kernel connection JSON to bridge to, or None."""
     v = os.environ.get("JUPYLINK_IDE_REUSE", "1").strip().lower()
     if v in ("0", "false", "no", "off"):
@@ -653,7 +653,7 @@ def run_ide_proxy(frontend_cf: str, existing_cf: str) -> None:
         sys.exit(0)
 
 
-def maybe_run_ide_proxy_from_argv(argv: list[str] | None = None) -> bool:
+def maybe_run_ide_proxy_from_argv(argv: Optional[list[str]] = None) -> bool:
     """If reuse applies, run proxy and return True; else return False.
 
     When bridging, this process is only a ZMQ proxy; the real JupyLinkKernel runs in the

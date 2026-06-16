@@ -31,6 +31,7 @@ def test_resolve_explicit_connection_file(tmp_path, monkeypatch) -> None:
     fe.write_text("{}", encoding="utf-8")
     ex.write_text("{}", encoding="utf-8")
     monkeypatch.setenv("JUPYLINK_IDE_CONNECTION_FILE", str(ex))
+    monkeypatch.setenv("JUPYLINK_IDE_REUSE", "1")
     assert kip.resolve_existing_connection_for_ide(str(fe)) == str(ex.resolve())
 
 
@@ -92,6 +93,7 @@ def test_discover_ambiguous_two_sidecars(tmp_path, monkeypatch) -> None:
 
 def test_resolve_via_registry(isolated_registry, tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
+    monkeypatch.setenv("JUPYLINK_IDE_REUSE", "1")
     monkeypatch.chdir(tmp_path)
     nb = tmp_path / "n.ipynb"
     nb.write_text("{}", encoding="utf-8")
@@ -212,6 +214,7 @@ def test_active_notebook_hint_unblocks_registry_single_require_hint(
     monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
     monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE", "1")
     monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE_REQUIRE_NOTEBOOK_HINT", "1")
+    monkeypatch.setenv("JUPYLINK_IDE_REUSE", "1")
     nb = tmp_path / "n.ipynb"
     nb.write_text("{}", encoding="utf-8")
     cf = tmp_path / "k.json"
@@ -230,6 +233,7 @@ def test_resolve_unique_live_picks_only_heartbeat_ok(
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("JUPYLINK_IDE_CONNECTION_FILE", raising=False)
     monkeypatch.setenv("JUPYLINK_IDE_REGISTRY_SINGLE", "0")
+    monkeypatch.setenv("JUPYLINK_IDE_REUSE", "1")
     for name in ("a", "b"):
         (tmp_path / f"{name}.ipynb").write_text("{}", encoding="utf-8")
     cf1 = tmp_path / "k1.json"

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Optional, Union
 
 from .kernel_registry import resolve_notebook_filesystem_path
 
@@ -55,7 +56,7 @@ def _get_url_scheme() -> str:
     return "cursor"
 
 
-def _get_remote_ssh_host() -> str | None:
+def _get_remote_ssh_host() -> Optional[str]:
     """Get SSH host for vscode-remote URI. From JUPYLINK_REMOTE_SSH_HOST or SSH_CONNECTION."""
     host = os.environ.get("JUPYLINK_REMOTE_SSH_HOST", "").strip()
     if host:
@@ -69,11 +70,11 @@ def _get_remote_ssh_host() -> str | None:
     return None
 
 
-def _find_editor_cmd() -> str | None:
+def _find_editor_cmd() -> Optional[str]:
     """Find cursor or code CLI. Returns full path for reliable subprocess."""
     import shutil
 
-    def try_cmd(name: str) -> str | None:
+    def try_cmd(name: str) -> Optional[str]:
         return shutil.which(name)
 
     is_win = sys.platform == "win32"
@@ -124,11 +125,13 @@ def _find_editor_cmd() -> str | None:
             Path.home() / ".local" / "bin" / "cursor",
             Path("/usr/local/bin/cursor"),
             Path("/usr/bin/cursor"),
+            Path("/opt/Cursor/resources/app/bin/cursor"),
             Path.home() / ".local" / "bin" / "code",
             Path("/usr/local/bin/code"),
             Path("/usr/bin/code"),
             Path("/snap/bin/code"),
             Path("/usr/share/code/bin/code"),
+            Path("/opt/visual-studio-code/bin/code"),
         ]
         for cand in linux_paths:
             if cand.exists():
@@ -169,7 +172,7 @@ def _path_to_vscode_remote_uri(path: Path, host: str) -> str:
     return f"{scheme}://vscode-remote/ssh-remote+{host}{remote_path}#1,1"
 
 
-def _run_refresh(path: Path, cmd: str | None = None, remote_host: str | None = None) -> None:
+def _run_refresh(path: Path, cmd: Optional[str] = None, remote_host: Optional[str] = None) -> None:
     """Invoke IDE CLI and/or URL scheme to focus/reload the file. Called after debounce delay."""
     use_url = os.environ.get("JUPYLINK_REFRESH_USE_URL", "0").lower() not in ("0", "false", "no")
 
@@ -216,26 +219,29 @@ def _run_refresh(path: Path, cmd: str | None = None, remote_host: str | None = N
 def _is_temp_path(path: Path) -> bool:
     """Return True if path is under a temp directory (skip refresh for test artifacts)."""
     path_str = str(path).lower()
-    temp_markers = (
-        "\\temp\\",
+    temp_markers = [
         "/temp/",
-        "\\tmp\\",
         "/tmp/",
         "pytest-of-",
-        "\\appdata\\local\\temp\\",
         "/.cache/",
-    )
+    ]
+    if os.name == "nt":
+        temp_markers.extend(["\\temp\\", "\\tmp\\", "\\appdata\\local\\temp\\"])
+    # Linux: check $TMPDIR if set
+    tmpdir = os.environ.get("TMPDIR", "").strip().lower()
+    if tmpdir and tmpdir in path_str:
+        return True
     return any(m in path_str for m in temp_markers)
 
 
-def _on_refresh_timer(path: Path, cmd: str | None, remote_host: str | None) -> None:
+def _on_refresh_timer(path: Path, cmd: Optional[str], remote_host: Optional[str]) -> None:
     """Called when debounce timer fires: run refresh and clear pending."""
     with _pending_lock:
         _pending_refresh.pop(path, None)
     _run_refresh(path, cmd=cmd, remote_host=remote_host)
 
 
-def request_notebook_refresh(notebook_path: str | Path) -> bool:
+def request_notebook_refresh(notebook_path: Union[str, Path]) -> bool:
     """Ask IDE to refresh the notebook file (reopen from disk).
 
     Tries cursor/code CLI with -r (reuse window) to focus and reload the file.
@@ -261,8 +267,8 @@ def request_notebook_refresh(notebook_path: str | Path) -> bool:
         logger.debug("Skip refresh for temp path: %s", path)
         return False
 
-    cmd: str | None = None
-    remote_host: str | None = None
+    cmd: Optional[str] = None
+    remote_host: Optional[str] = None
     if _is_remote_ssh_context():
         remote_host = _get_remote_ssh_host()
         if remote_host:

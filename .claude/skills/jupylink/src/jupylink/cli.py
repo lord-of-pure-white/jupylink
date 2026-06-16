@@ -1,0 +1,481 @@
+"""CLI for JupyLink."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+from typing import Optional
+
+import typer
+
+from .ipynb_ops import create_cell, delete_cell, get_cell_source, list_cells, write_cell
+from .kernel_registry import (
+    cleanup_stale,
+    list_kernels,
+    read_active_notebook_hint,
+    resolve_notebook_filesystem_path,
+)
+from .notify_ide import request_notebook_refresh, set_refresh_disabled
+from .record_manager import RecordManager
+
+app = typer.Typer(help="JupyLink - Jupyter kernel proxy and CLI for agent-friendly notebook operations")
+
+# Sentinel for "notebook path not explicitly provided"
+_ARG_NOT_PROVIDED = "__not_provided__"
+
+
+def _default_notebook():
+    """Resolve the default notebook from env or active-notebook hint."""
+    path = os.environ.get("JUPYLINK_DEFAULT_NOTEBOOK", "").strip()
+    if path and os.path.isfile(path) and path.endswith(".ipynb"):
+        return path
+    hint = read_active_notebook_hint()
+    if hint:
+        return str(hint)
+    return None
+
+
+def _require_notebook(path):
+    """Resolve and validate a notebook path for commands that need one."""
+    if path is _ARG_NOT_PROVIDED or not path:
+        path = _default_notebook()
+    if not path:
+        raise typer.BadParameter(
+            "No notebook specified. Provide a path, set JUPYLINK_DEFAULT_NOTEBOOK, "
+            "or run from a directory with an active notebook."
+        )
+    p = resolve_notebook_filesystem_path(path)
+    if not p.exists():
+        try:
+            p = resolve_notebook_filesystem_path(path)
+        except Exception:
+            pass
+    if not os.path.exists(str(p)):
+        raise typer.BadParameter("Notebook not found: {}".format(path))
+    if not str(p).endswith(".ipynb"):
+        raise typer.BadParameter("Not a notebook file: {}".format(path))
+    return p
+
+
+def _optional_notebook(path):
+    """Resolve notebook path or return None."""
+    if path is _ARG_NOT_PROVIDED or not path:
+        return None
+    try:
+        return _require_notebook(path)
+    except typer.BadParameter:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Helper for --json flag
+# ---------------------------------------------------------------------------
+_json_opt = typer.Option(False, "--json", help="Output in structured JSON format")
+
+
+# ---------------------------------------------------------------------------
+@app.command(name="get-output")
+def get_output(
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    cell_id: str = typer.Argument(..., help="Cell ID (supports prefix matching)"),
+    execution_count: Optional[int] = typer.Option(None, "--execution-count", "-e", help="Execution count (In[N])"),
+) -> None:
+    """Get output for a cell by cell_id and optional execution_count."""
+    path = _require_notebook(notebook)
+    output = RecordManager.get_output_from_record_file(path, cell_id, execution_count)
+    if output is None:
+        typer.echo("No output found.", err=True)
+        raise typer.Exit(1)
+    typer.echo(json.dumps(output, ensure_ascii=False, indent=2))
+
+
+# ---------------------------------------------------------------------------
+@app.command(name="write-cell")
+def write_cell_cmd(
+    cell_id: str = typer.Argument(..., help="Cell ID (supports prefix matching)"),
+    content: str = typer.Argument(..., help="Content to write"),
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    no_refresh: bool = typer.Option(False, "--no-refresh", help="Do not request IDE to refresh"),
+) -> None:
+    """Write content to the specified cell."""
+    if no_refresh:
+        set_refresh_disabled(True)
+    path = _require_notebook(notebook)
+    if not write_cell(path, cell_id, content):
+        typer.echo("Cell not found: {}".format(cell_id), err=True)
+        raise typer.Exit(1)
+    typer.echo("OK")
+
+
+# ---------------------------------------------------------------------------
+@app.command(name="create-cell")
+def create_cell_cmd(
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    at: Optional[int] = typer.Option(None, "--at", "-a", help="Index to insert at (default: append)"),
+    cell_type: str = typer.Option("code", "--type", "-t", help="Cell type: code, markdown, raw"),
+    source: str = typer.Option("", "--source", "-s", help="Initial source content"),
+    no_refresh: bool = typer.Option(False, "--no-refresh", help="Do not request IDE to refresh"),
+) -> None:
+    """Create a new cell in the notebook."""
+    if no_refresh:
+        set_refresh_disabled(True)
+    path = _require_notebook(notebook)
+    if cell_type not in ("code", "markdown", "raw"):
+        typer.echo("Invalid cell type: {}".format(cell_type), err=True)
+        raise typer.Exit(1)
+    new_id = create_cell(path, cell_type=cell_type, index=at, source=source)
+    if not new_id:
+        typer.echo("Failed to create cell.", err=True)
+        raise typer.Exit(1)
+    typer.echo(new_id)
+
+
+# ---------------------------------------------------------------------------
+@app.command(name="delete-cell")
+def delete_cell_cmd(
+    cell_id: str = typer.Argument(..., help="Cell ID (supports prefix matching)"),
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    no_refresh: bool = typer.Option(False, "--no-refresh", help="Do not request IDE to refresh"),
+) -> None:
+    """Delete the cell with the given cell_id."""
+    if no_refresh:
+        set_refresh_disabled(True)
+    path = _require_notebook(notebook)
+    if not delete_cell(path, cell_id):
+        typer.echo("Cell not found: {}".format(cell_id), err=True)
+        raise typer.Exit(1)
+    typer.echo("OK")
+
+
+# ---------------------------------------------------------------------------
+@app.command(name="list-cells")
+def list_cells_cmd(
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    json_output: bool = _json_opt,
+) -> None:
+    """List all cells with id, type, and source preview."""
+    path = _require_notebook(notebook)
+    cells = list_cells(path)
+
+    if json_output:
+        for c in cells:
+            c.pop("source_preview", None)
+        typer.echo(json.dumps(cells, ensure_ascii=False, indent=2))
+        return
+
+    for c in cells:
+        empty = " (empty)" if c["empty"] else ""
+        line = "  [{}] {} ({}){}: {!r}".format(
+            c["index"], c["id"], c["cell_type"], empty, c["source_preview"]
+        )
+        typer.echo(line)
+
+
+# ---------------------------------------------------------------------------
+@app.command(name="list-kernels")
+def list_kernels_cmd() -> None:
+    """List running kernels and their associated notebook files."""
+    kernels = list_kernels()
+    if not kernels:
+        typer.echo("No running kernels.")
+        return
+    for k in kernels:
+        typer.echo("  {}".format(k["notebook_path"]))
+        typer.echo("    -> {}".format(k["connection_file"]))
+
+
+# ---------------------------------------------------------------------------
+@app.command(name="cleanup-kernels")
+def cleanup_kernels_cmd() -> None:
+    """Remove stale kernel registry entries (e.g. after SIGKILL)."""
+    n = cleanup_stale()
+    typer.echo("Removed {} stale kernel(s).".format(n))
+
+
+# ---------------------------------------------------------------------------
+@app.command()
+def record(
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+) -> None:
+    """Sync record from ipynb: merge ipynb cells with existing execution data.
+
+    If record.json exists, preserves execution history and updates pending cells from ipynb.
+    """
+    path = _require_notebook(notebook)
+    rm = RecordManager(path)
+    loaded = rm.load_from_record_file()
+    merged = rm.merge_ipynb_execution_state()
+    rm.write_record()
+    stem = os.path.splitext(os.path.basename(str(path)))[0]
+    base = os.path.dirname(str(path))
+    py_path = os.path.join(base, "{}_record.py".format(stem))
+    if loaded:
+        typer.echo("Synced: preserved execution data, updated from ipynb -> {}".format(py_path))
+    else:
+        typer.echo("Wrote {} and {}_record.json (no prior execution)".format(py_path, stem))
+
+
+# ---------------------------------------------------------------------------
+@app.command()
+def execute(
+    cell_ids: list[str] = typer.Argument(..., help="Cell ID(s) to execute (supports prefix matching)"),
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    no_refresh: bool = typer.Option(False, "--no-refresh", help="Do not request IDE to refresh"),
+) -> None:
+    """Execute the specified cell(s). Multiple cells run in sequence, reusing the same kernel."""
+    from .executor import execute_cell, execute_cells
+
+    if no_refresh:
+        set_refresh_disabled(True)
+    path = _require_notebook(notebook)
+    if len(cell_ids) == 1:
+        result = execute_cell(path, cell_ids[0])
+        if result is None:
+            typer.echo("Cell not found or execution failed: {}".format(cell_ids[0]), err=True)
+            raise typer.Exit(1)
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        results = execute_cells(path, cell_ids)
+        if not results:
+            typer.echo("No cells executed or cells not found", err=True)
+            raise typer.Exit(1)
+        for r in results:
+            typer.echo(json.dumps(r, ensure_ascii=False, indent=2))
+
+
+# ---------------------------------------------------------------------------
+@app.command()
+def view(
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    pending: bool = typer.Option(False, "--pending", help="Only show editable cells (pending / empty)"),
+    errors: bool = typer.Option(False, "--errors", help="Only show cells with execution errors"),
+    cell: Optional[str] = typer.Option(None, "--cell", "-c", help="Show a single cell by ID"),
+    json_output: bool = _json_opt,
+) -> None:
+    """Print the notebook as agent-friendly Python code (from _record.py).
+
+    Executed cells are locked. Pending, empty, and markdown cells are editable.
+    Error cells show the traceback as comments with a try/except wrapper.
+    """
+    path = _require_notebook(notebook)
+    cells = _load_record_cells(path, pending=pending, errors=errors, cell=cell)
+
+    if json_output:
+        typer.echo(json.dumps(_cells_to_json(cells), ensure_ascii=False, indent=2))
+        return
+
+    lines = _format_record_py(cells)
+    typer.echo("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+@app.command()
+def status(
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    json_output: bool = _json_opt,
+) -> None:
+    """Show notebook summary: cell counts, errors, kernel connection."""
+    path = _require_notebook(notebook)
+    cells = _load_record_cells(path)
+
+    counts = {"total": 0, "executed": 0, "pending": 0, "error": 0, "empty": 0, "markdown": 0}
+    error_list = []
+    _status_label = {"ok": "executed"}
+    for c in cells:
+        s = c.get("status", "pending")
+        s = _status_label.get(s, s)
+        counts["total"] += 1
+        counts[s] = counts.get(s, 0) + 1
+        if s == "error":
+            err = c.get("error_info", {})
+            error_list.append({
+                "cell_id": c.get("id", ""),
+                "exec_order": c.get("exec_order"),
+                "error": "{}: {}".format(err.get("ename", ""), err.get("evalue", "")),
+            })
+
+    if json_output:
+        typer.echo(json.dumps({
+            "notebook": str(path),
+            "kernel": "running" if list_kernels() else "none",
+            "counts": counts,
+            "errors": error_list,
+        }, ensure_ascii=False, indent=2))
+        return
+
+    lines = ["Notebook: {}".format(str(path))]
+    lines.append("  Kernel: {}".format("running" if list_kernels() else "none"))
+    lines.append("  Cells: {} total | {} executed | {} error | {} pending | {} empty | {} markdown".format(
+        counts["total"], counts["executed"], counts["error"], counts["pending"], counts["empty"], counts["markdown"]
+    ))
+    if error_list:
+        lines.append("  Errors:")
+        for e in error_list:
+            lines.append("    [{}] exec#{}: {}".format(e["cell_id"][:12], e["exec_order"], e["error"]))
+    typer.echo("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+@app.command()
+def serve(
+    port: int = typer.Option(0, "--port", "-p", help="Port (0 = stdio for MCP)"),
+    notebook: Optional[str] = typer.Option(None, "--notebook", "-n", help="Optional notebook path to bind"),
+) -> None:
+    """Start MCP server for Cursor integration."""
+    try:
+        from .mcp_server import run_mcp_server
+    except ImportError:
+        typer.echo(
+            "MCP server requires Python >= 3.10 and 'mcp' package.\n"
+            "Install: pip install jupylink[mcp]",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    run_mcp_server(port=port, notebook_path=notebook)
+
+
+# ---------------------------------------------------------------------------
+@app.command("install-kernelspec")
+def install_kernelspec_cmd(
+    user: bool = typer.Option(
+        True,
+        "--user/--system",
+        help="Install for current user (default) or system-wide",
+    ),
+    replace: bool = typer.Option(
+        True,
+        "--replace/--no-replace",
+        help="Replace an existing jupylink kernelspec",
+    ),
+) -> None:
+    """Install Jupyter kernelspec using sys.executable (avoids wrong 'python' outside venv)."""
+    from jupyter_client.kernelspec import KernelSpecManager
+
+    tmp_root = Path(tempfile.mkdtemp(prefix="jupylink-kspec-"))
+    spec_dir = tmp_root / "jupylink"
+    try:
+        spec_dir.mkdir(parents=True)
+        kernel_json = {
+            "argv": [sys.executable, "-m", "jupylink", "-f", "{connection_file}"],
+            "display_name": "JupyLink",
+            "language": "python",
+        }
+        (spec_dir / "kernel.json").write_text(
+            json.dumps(kernel_json, indent=2),
+            encoding="utf-8",
+        )
+        KernelSpecManager().install_kernel_spec(
+            str(spec_dir),
+            kernel_name="jupylink",
+            user=user,
+            replace=replace,
+        )
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+    typer.echo("Installed kernelspec 'jupylink' using: {}".format(sys.executable))
+
+
+# ===========================================================================
+# Shared helpers for view / status
+# ===========================================================================
+
+def _load_record_cells(notebook_path, pending=False, errors=False, cell=None):
+    """Load cells from record JSON (fall back to ipynb). Returns list of cell dicts."""
+    path = _require_notebook(notebook_path)
+    rm = RecordManager(path)
+    rm.load_from_record_file()
+    rm.merge_ipynb_execution_state()
+    all_cells = rm._build_cells_list()
+
+    if cell:
+        all_cells = [c for c in all_cells
+                     if c.get("id") == cell or (c.get("id") or "").startswith(cell)]
+        if len(all_cells) > 1:
+            all_cells = all_cells[:1]
+    if pending:
+        all_cells = [c for c in all_cells
+                     if c.get("status") in ("pending", "empty", "markdown")]
+    if errors:
+        all_cells = [c for c in all_cells if c.get("status") == "error"]
+    return all_cells
+
+
+def _cells_to_json(cells):
+    """Convert cell list to JSON-able dicts for structured output."""
+    result = []
+    for c in cells:
+        entry = {
+            "id": c.get("id") or c.get("cell_id"),
+            "cell_type": c.get("cell_type", "code"),
+            "status": c.get("status", "unknown"),
+            "code": c.get("code", ""),
+            "editable": c.get("editable", False),
+        }
+        if c.get("exec_order") is not None:
+            entry["exec_order"] = c["exec_order"]
+        if c.get("execution_count") is not None:
+            entry["execution_count"] = c["execution_count"]
+        if c.get("error_info"):
+            err = c["error_info"]
+            entry["error"] = "{}: {}".format(err.get("ename", ""), err.get("evalue", ""))
+        result.append(entry)
+    return result
+
+
+def _format_record_py(cells):
+    """Format cells as annotated Python (same format as _record.py)."""
+    py_lines = []
+    for c in cells:
+        cell_id = c.get("id") or c.get("cell_id", "unknown")
+        cell_type = c.get("cell_type", "code")
+        exec_order = c.get("exec_order")
+        code = c.get("code", "")
+
+        if cell_type == "markdown":
+            py_lines.append("# %% [markdown] {}".format(cell_id))
+            py_lines.append("# [markdown - editable]")
+            for line in (code or "").split("\n"):
+                py_lines.append("# {}".format(line) if line else "#")
+        else:
+            if exec_order is not None:
+                py_lines.append("# %% {}  # exec_order: {}".format(cell_id, exec_order))
+            else:
+                py_lines.append("# %% {}".format(cell_id))
+
+            s = c.get("status", "pending")
+            if s == "ok":
+                py_lines.append("# [executed - do not modify]")
+            elif s == "error":
+                py_lines.append("# [error - do not modify]")
+                err = c.get("error_info", {})
+                if err:
+                    if err.get("ename") and err.get("evalue"):
+                        py_lines.append("# {}: {}".format(err["ename"], err["evalue"]))
+                    tb = err.get("traceback", [])
+                    if tb:
+                        import re as _re
+                        for tb_line in tb:
+                            py_lines.append("# {}".format(_re.sub(r"\x1b\[[0-9;]*m", "", tb_line)))
+            elif s == "empty":
+                py_lines.append("# [empty - editable]")
+            else:
+                py_lines.append("# [pending - editable]")
+            py_lines.append(code)
+        py_lines.append("")
+    return py_lines
+
+
+# ===========================================================================
+
+def main() -> None:
+    app()
+
+
+if __name__ == "__main__":
+    main()

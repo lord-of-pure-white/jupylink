@@ -6,8 +6,9 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
+import nbformat
 from jupyter_client.blocking import BlockingKernelClient
 from jupyter_client.manager import start_new_kernel
 
@@ -21,7 +22,6 @@ from .kernel_registry import (
     unregister,
     write_active_notebook_hint,
 )
-from .notify_ide import request_notebook_refresh
 from .record_manager import RecordManager
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ def _output_hook_impl(msg: dict[str, Any], captured: list[dict[str, Any]]) -> No
 
 def _execute_with_metadata(
     kc: BlockingKernelClient, code: str, cell_id: str, captured: list[dict[str, Any]]
-) -> dict[str, Any] | None:
+) -> Optional[dict[str, Any]]:
     """Send execute_request with cellId in metadata, collect output, return reply."""
     timeout = _get_exec_timeout()
     content = {
@@ -109,9 +109,9 @@ def _execute_with_metadata(
 def _execute_with_client(
     kc: BlockingKernelClient,
     code: str,
-    cell_id: str | None = None,
-    notebook_path: Path | None = None,
-) -> dict[str, Any] | None:
+    cell_id: Optional[str] = None,
+    notebook_path: Optional[Path] = None,
+) -> Optional[dict[str, Any]]:
     """Execute code with a kernel client and return result."""
     captured: list[dict[str, Any]] = []
 
@@ -144,19 +144,14 @@ def _execute_with_client(
         "traceback": content.get("traceback", []),
     }
     if cell_id and notebook_path:
-        RecordManager.update_cell_output(
-            notebook_path, cell_id, captured, result.get("execution_count")
-        )
         update_ipynb_output(
             notebook_path, cell_id, captured, result.get("execution_count")
         )
         RecordManager.sync_record(notebook_path)
-    if notebook_path:
-        request_notebook_refresh(notebook_path)
     return result
 
 
-def _connect_existing_kernel(path: Path) -> BlockingKernelClient | None:
+def _connect_existing_kernel(path: Path) -> Optional[BlockingKernelClient]:
     """Try to connect to an existing JupyLink kernel for this notebook.
 
     On connection failure, unregisters the stale entry so next execute will spawn fresh.
@@ -180,13 +175,24 @@ def _connect_existing_kernel(path: Path) -> BlockingKernelClient | None:
         return None
 
 
-def _spawn_kernel(path: Path) -> tuple[Any, BlockingKernelClient] | None:
-    """Spawn a new kernel for this notebook. Returns (km, kc) or None."""
+def _read_notebook_kernel_name(path):
+    """Read the kernel name from a notebook's kernelspec metadata."""
+    try:
+        nb = nbformat.read(str(path), as_version=nbformat.NO_CONVERT)
+    except Exception:
+        return None
+    return (nb.metadata.get("kernelspec", {}) or {}).get("name")
+
+
+def _spawn_kernel(path):
+    """Spawn a new kernel for this notebook. Returns (km, kc) or None.
+
+    Prefers jupylink kernelspec when available (so record writing works).
+    Otherwise uses the notebook's own kernelspec (e.g. python2, python3).
+    """
     env = os.environ.copy()
     p = str(path)
     env["JUPYTER_NOTEBOOK_PATH"] = p
-    # Same canonical path for IDE bridge hints (Jupyter kernel env is a different process).
-    env["JUPYLINK_IDE_NOTEBOOK_PATH"] = p
     env["JUPYLINK_NOTEBOOK_PATH"] = p
 
     kernel_name = "jupylink"
@@ -194,8 +200,8 @@ def _spawn_kernel(path: Path) -> tuple[Any, BlockingKernelClient] | None:
         from jupyter_client.kernelspec import get_kernel_spec
         get_kernel_spec(kernel_name)
     except Exception:
-        kernel_name = "python3"
-        logger.info("jupylink kernelspec not found, falling back to python3")
+        kernel_name = _read_notebook_kernel_name(path) or "python3"
+        logger.info("jupylink kernelspec not found, using notebook kernel: %s", kernel_name)
 
     try:
         km, kc = start_new_kernel(kernel_name=kernel_name, env=env, independent=True)
@@ -205,7 +211,7 @@ def _spawn_kernel(path: Path) -> tuple[Any, BlockingKernelClient] | None:
         return None
 
 
-def execute_cell(notebook_path: str | Path, cell_id: str) -> dict[str, Any] | None:
+def execute_cell(notebook_path: Union[str, Path], cell_id: str) -> Optional[dict[str, Any]]:
     """Execute a cell by cell_id and return status, output, execution_count.
 
     First tries to connect to the existing JupyLink kernel for this notebook.
@@ -251,7 +257,7 @@ def execute_cell(notebook_path: str | Path, cell_id: str) -> dict[str, Any] | No
 
 
 def execute_cells(
-    notebook_path: str | Path, cell_ids: list[str]
+    notebook_path: Union[str, Path], cell_ids: list[str]
 ) -> list[dict[str, Any]]:
     """Execute multiple cells in sequence, reusing the same kernel.
 
