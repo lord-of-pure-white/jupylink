@@ -184,24 +184,48 @@ def _read_notebook_kernel_name(path):
     return (nb.metadata.get("kernelspec", {}) or {}).get("name")
 
 
+def _find_kernel_name(path):
+    """Find the best kernel name for this notebook.
+
+    1. jupylink (Py3 record-writing kernel) — always preferred
+    2. jupylink2 (Py2 record-writing kernel) — for python2 notebooks
+    3. Whatever the notebook's kernelspec says (fallback)
+    """
+    from jupyter_client.kernelspec import get_kernel_spec
+
+    # Always prefer jupylink if available
+    try:
+        get_kernel_spec("jupylink")
+        return "jupylink"
+    except Exception:
+        pass
+
+    nb_name = _read_notebook_kernel_name(path)
+    # If the notebook's kernel is python2, try jupylink2 first
+    if nb_name and "python2" in nb_name.lower():
+        try:
+            get_kernel_spec("jupylink2")
+            logger.info("Using jupylink2 kernel for python2 notebook")
+            return "jupylink2"
+        except Exception:
+            pass
+
+    return nb_name or "python3"
+
+
 def _spawn_kernel(path):
     """Spawn a new kernel for this notebook. Returns (km, kc) or None.
 
-    Prefers jupylink kernelspec when available (so record writing works).
-    Otherwise uses the notebook's own kernelspec (e.g. python2, python3).
+    Prefers jupylink / jupylink2 when available (so record writing works).
+    Otherwise uses the notebook's own kernelspec (e.g. python3, python2).
     """
     env = os.environ.copy()
     p = str(path)
     env["JUPYTER_NOTEBOOK_PATH"] = p
     env["JUPYLINK_NOTEBOOK_PATH"] = p
 
-    kernel_name = "jupylink"
-    try:
-        from jupyter_client.kernelspec import get_kernel_spec
-        get_kernel_spec(kernel_name)
-    except Exception:
-        kernel_name = _read_notebook_kernel_name(path) or "python3"
-        logger.info("jupylink kernelspec not found, using notebook kernel: %s", kernel_name)
+    kernel_name = _find_kernel_name(path)
+    logger.info("Starting kernel '%s' for %s", kernel_name, p)
 
     try:
         km, kc = start_new_kernel(kernel_name=kernel_name, env=env, independent=True)

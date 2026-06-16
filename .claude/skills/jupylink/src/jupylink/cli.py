@@ -16,7 +16,9 @@ import typer
 from .ipynb_ops import create_cell, delete_cell, get_cell_source, list_cells, write_cell
 from .kernel_registry import (
     cleanup_stale,
+    get_connection_file,
     list_kernels,
+    probe_kernel,
     read_active_notebook_hint,
     resolve_notebook_filesystem_path,
 )
@@ -178,15 +180,58 @@ def list_cells_cmd(
 
 # ---------------------------------------------------------------------------
 @app.command(name="list-kernels")
-def list_kernels_cmd() -> None:
-    """List running kernels and their associated notebook files."""
+def list_kernels_cmd(
+    json_output: bool = typer.Option(False, "--json", help="Output in structured JSON format"),
+) -> None:
+    """List registered kernels with live/dead status (heartbeat probe)."""
     kernels = list_kernels()
     if not kernels:
-        typer.echo("No running kernels.")
+        if json_output:
+            typer.echo(json.dumps([], ensure_ascii=False))
+        else:
+            typer.echo("No registered kernels.")
         return
+
+    if json_output:
+        typer.echo(json.dumps(kernels, ensure_ascii=False, indent=2))
+        return
+
     for k in kernels:
-        typer.echo("  {}".format(k["notebook_path"]))
+        status = "[LIVE]" if k.get("alive") else "[DEAD]"
+        typer.echo("  {} {}".format(status, k["notebook_path"]))
         typer.echo("    -> {}".format(k["connection_file"]))
+
+
+# ---------------------------------------------------------------------------
+@app.command(name="ping")
+def ping_cmd(
+    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+) -> None:
+    """Check if the notebook's kernel is alive and responding."""
+    path = _require_notebook(notebook)
+    cf = get_connection_file(path)
+    if not cf:
+        typer.echo(json.dumps({
+            "status": "no_kernel",
+            "message": "No kernel registered for {}".format(str(path)),
+        }, ensure_ascii=False, indent=2))
+        raise typer.Exit(1)
+
+    alive = probe_kernel(cf, timeout=2.0)
+    if alive:
+        typer.echo(json.dumps({
+            "status": "ok",
+            "connection_file": cf,
+            "notebook": str(path),
+        }, ensure_ascii=False, indent=2))
+    else:
+        typer.echo(json.dumps({
+            "status": "unreachable",
+            "connection_file": cf,
+            "notebook": str(path),
+            "message": "Kernel registered but not responding — may be dead",
+        }, ensure_ascii=False, indent=2))
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -299,17 +344,28 @@ def status(
                 "error": "{}: {}".format(err.get("ename", ""), err.get("evalue", "")),
             })
 
+    kernel_state = "none"
+    kernel_cf = get_connection_file(path)
+    if kernel_cf:
+        if probe_kernel(kernel_cf, timeout=1.0):
+            kernel_state = "connected"
+        else:
+            kernel_state = "unreachable"
+
     if json_output:
         typer.echo(json.dumps({
             "notebook": str(path),
-            "kernel": "running" if list_kernels() else "none",
+            "kernel": kernel_state,
+            "connection_file": kernel_cf,
             "counts": counts,
             "errors": error_list,
         }, ensure_ascii=False, indent=2))
         return
 
     lines = ["Notebook: {}".format(str(path))]
-    lines.append("  Kernel: {}".format("running" if list_kernels() else "none"))
+    lines.append("  Kernel: {}".format(kernel_state))
+    if kernel_cf and kernel_state == "unreachable":
+        lines.append("    (registered but not responding — may need restart)")
     lines.append("  Cells: {} total | {} executed | {} error | {} pending | {} empty | {} markdown".format(
         counts["total"], counts["executed"], counts["error"], counts["pending"], counts["empty"], counts["markdown"]
     ))

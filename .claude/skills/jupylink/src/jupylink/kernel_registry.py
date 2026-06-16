@@ -550,6 +550,35 @@ def get_connection_file(notebook_path):
     return _with_registry_lock(_do)
 
 
+def probe_kernel(connection_file, timeout=1.0):
+    """Check whether a kernel is alive via heartbeat. Returns True/False.
+
+    Does NOT modify the registry. Lightweight — uses a short timeout.
+    """
+    try:
+        from jupyter_client.blocking.client import BlockingKernelClient
+    except ImportError:
+        logger.debug("jupyter_client not available; skipping probe")
+        return True  # assume alive if we can't check
+
+    kc = None
+    try:
+        kc = BlockingKernelClient()
+        kc.load_connection_file(connection_file)
+        kc.start_channels()
+        kc.wait_for_ready(timeout=timeout)
+        return True
+    except Exception:
+        logger.debug("Probe failed for %s", connection_file, exc_info=True)
+        return False
+    finally:
+        if kc is not None:
+            try:
+                kc.stop_channels()
+            except Exception:
+                pass
+
+
 def list_kernels():
     def _do():
         kernels = _read_registry()
@@ -568,7 +597,10 @@ def list_kernels():
             _write_registry(kernels)
         return list(by_canon.values())
 
-    return _with_registry_lock(_do)
+    entries = _with_registry_lock(_do)
+    for e in entries:
+        e["alive"] = probe_kernel(e["connection_file"], timeout=1.0)
+    return entries
 
 
 def cleanup_stale():
