@@ -351,19 +351,39 @@ def install_kernelspec_cmd(
     replace: bool = typer.Option(
         True,
         "--replace/--no-replace",
-        help="Replace an existing jupylink kernelspec",
+        help="Replace an existing kernelspec",
+    ),
+    name: str = typer.Option(
+        "jupylink",
+        "--name",
+        help="Kernel name: jupylink (Py3, default) or jupylink2 (Py2)",
     ),
 ) -> None:
-    """Install Jupyter kernelspec using sys.executable (avoids wrong 'python' outside venv)."""
+    """Install Jupyter kernelspec. Use --name jupylink2 for Python 2 notebooks."""
     from jupyter_client.kernelspec import KernelSpecManager
 
+    if name not in ("jupylink", "jupylink2"):
+        typer.echo("Invalid kernel name: {}. Use jupylink or jupylink2.".format(name), err=True)
+        raise typer.Exit(1)
+
+    if name == "jupylink2":
+        python_exe = (
+            shutil.which("python2")
+            or shutil.which("python2.7")
+            or "python2"
+        )
+        display = "JupyLink (Python 2)"
+    else:
+        python_exe = sys.executable
+        display = "JupyLink"
+
     tmp_root = Path(tempfile.mkdtemp(prefix="jupylink-kspec-"))
-    spec_dir = tmp_root / "jupylink"
+    spec_dir = tmp_root / name
     try:
         spec_dir.mkdir(parents=True)
         kernel_json = {
-            "argv": [sys.executable, "-m", "jupylink", "-f", "{connection_file}"],
-            "display_name": "JupyLink",
+            "argv": [python_exe, "-m", "jupylink", "-f", "{connection_file}"],
+            "display_name": display,
             "language": "python",
         }
         (spec_dir / "kernel.json").write_text(
@@ -372,13 +392,13 @@ def install_kernelspec_cmd(
         )
         KernelSpecManager().install_kernel_spec(
             str(spec_dir),
-            kernel_name="jupylink",
+            kernel_name=name,
             user=user,
             replace=replace,
         )
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
-    typer.echo("Installed kernelspec 'jupylink' using: {}".format(sys.executable))
+    typer.echo("Installed kernelspec '{}' ({}) using: {}".format(name, display, python_exe))
 
 
 # ===========================================================================
