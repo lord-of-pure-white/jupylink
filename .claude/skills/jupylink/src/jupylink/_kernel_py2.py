@@ -264,12 +264,35 @@ class JupyLinkKernel(IPythonKernel):
         except Exception:
             logger.exception("Record write failed")
 
+    def _extract_cell_id(self):
+        """Try to get the ipynb cell id from the execute_request metadata.
+
+        Jupyter Lab sends ``cellId`` (nbformat UUID) in the message metadata.
+        VS Code sends ``vscode-notebook-cell:URI#fragment`` — we skip those.
+        Falls back to None (caller should then hash the code).
+        """
+        try:
+            parent = _get_parent_header(self)
+            if not parent:
+                return None
+            meta = parent.get("metadata") or {}
+            cid = meta.get("cellId") or meta.get("cell_id")
+            if not cid or not isinstance(cid, basestring):
+                return None
+            # Skip VS Code URIs — those aren't real cell ids
+            if "vscode-notebook-cell:" in cid or cid.startswith("file://"):
+                return None
+            return cid
+        except Exception:
+            return None
+
     def _record_execution(self, code, reply, captured_output=None):
         if _is_ide_injected_code(code):
             return
-        # Deterministic cell_id from code hash
-        h = hashlib.sha256(code.encode("utf-8")).hexdigest()[:8]
-        cell_id = "cell_{}".format(h)
+        cell_id = self._extract_cell_id()
+        if not cell_id:
+            h = hashlib.sha256(code.encode("utf-8")).hexdigest()[:8]
+            cell_id = "cell_{}".format(h)
         status = reply.get("status", "ok")
         error_info = None
         output = None
