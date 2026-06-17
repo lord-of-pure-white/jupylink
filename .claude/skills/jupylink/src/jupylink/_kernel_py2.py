@@ -12,7 +12,7 @@ from ipykernel.ipkernel import IPythonKernel
 
 from .kernel_registry import register, resolve_notebook_filesystem_path, unregister
 from .magics import JupyLinkMagics
-from .record_manager import RecordManager, _is_ide_injected_code
+from .record_manager import RecordManager, _is_ide_injected_code, extract_rich_output
 
 logger = logging.getLogger(__name__)
 
@@ -305,6 +305,12 @@ class JupyLinkKernel(IPythonKernel):
             }
         if captured_output:
             output = self._serialize_output(captured_output)
+            if output:
+                extract_rich_output(
+                    output,
+                    self._record_manager.notebook_path,
+                    cell_id,
+                )
 
         self._record_manager.add_execution(
             cell_id=cell_id,

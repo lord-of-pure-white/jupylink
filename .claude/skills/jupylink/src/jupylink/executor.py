@@ -22,7 +22,7 @@ from .kernel_registry import (
     unregister,
     write_active_notebook_hint,
 )
-from .record_manager import RecordManager
+from .record_manager import RecordManager, extract_rich_output
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +134,8 @@ def _execute_with_client(
 
     if reply is None:
         return None
+    if cell_id and notebook_path:
+        extract_rich_output(captured, notebook_path, cell_id)
     content = reply.get("content", {})
     result = {
         "status": content.get("status", "ok"),

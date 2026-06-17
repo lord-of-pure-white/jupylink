@@ -1,5 +1,6 @@
 """Record Manager: maintains execution record, merges with ipynb, writes .py, JSON and CSV."""
 
+import base64
 import csv
 import json
 import logging
@@ -102,6 +103,78 @@ def _format_error_comment(error_info):
         for tb_line in error_info["traceback"]:
             lines.append("# {}".format(_strip_ansi(tb_line)))
     return "\n".join(lines) if lines else ""
+
+
+# ---------------------------------------------------------------------------
+# Rich output extraction (images, HTML → files)
+# ---------------------------------------------------------------------------
+_IMAGE_MIME = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/svg+xml": ".svg",
+    "image/bmp": ".bmp",
+    "image/webp": ".webp",
+}
+
+
+def extract_rich_output(captured, notebook_path, cell_id=None):
+    """Save images / HTML from captured output to files next to the notebook.
+
+    Modifies *captured* in place: replaces base64 blobs with ``rich_paths``
+    references and strips binary mime types from ``data``, keeping only
+    ``text/plain`` for agent readability.
+    """
+    if not notebook_path:
+        return
+    stem = os.path.splitext(os.path.basename(str(notebook_path)))[0]
+    base_dir = os.path.dirname(str(notebook_path))
+    short_id = (cell_id or "unknown")[:12]
+    file_index = 0
+
+    for item in captured:
+        data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        if not data:
+            continue
+        rich_paths = []
+        for mime, ext in _IMAGE_MIME.items():
+            payload = data.get(mime)
+            if not payload:
+                continue
+            if isinstance(payload, (list, tuple)):
+                payload = "".join(payload)
+            if not isinstance(payload, (str, bytes)):
+                continue
+            if isinstance(payload, str):
+                try:
+                    raw = base64.b64decode(payload)
+                except Exception:
+                    continue
+            else:
+                raw = payload
+
+            fname = "{}_{}_{}{}".format(stem, short_id, file_index, ext)
+            fpath = os.path.join(base_dir, fname)
+            with open(fpath, "wb") as fh:
+                fh.write(raw)
+            rich_paths.append(fpath)
+            file_index += 1
+
+        html = data.get("text/html")
+        if html:
+            fname = "{}_{}_{}.html".format(stem, short_id, file_index)
+            fpath = os.path.join(base_dir, fname)
+            with open(fpath, "w", encoding="utf-8") as fh:
+                fh.write(html if isinstance(html, str) else "".join(html))
+            rich_paths.append(fpath)
+            file_index += 1
+
+        if rich_paths:
+            slim_data = {}
+            if data.get("text/plain"):
+                slim_data["text/plain"] = data["text/plain"]
+            item["data"] = slim_data
+            item["rich_paths"] = rich_paths
 
 
 # ---------------------------------------------------------------------------
