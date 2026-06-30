@@ -45,8 +45,24 @@ def _to_source(value: str, existing_source: Optional[Union[str, list[str]]] = No
     return text.splitlines(keepends=True) if text else []
 
 
+def _find_cell_by_id(nb: Any, cell_id: str) -> Optional[dict]:
+    """Find a cell by exact id, then prefix match (min 4 chars, unique match)."""
+    cell_id = cell_id.strip()
+
+    for cell in nb.cells:
+        if cell.get("id") == cell_id:
+            return cell
+
+    if len(cell_id) >= 4:
+        matches = [c for c in nb.cells if (c.get("id") or "").startswith(cell_id)]
+        if len(matches) == 1:
+            return matches[0]
+
+    return None
+
+
 def write_cell(notebook_path: Union[str, Path], cell_id: str, content: str) -> bool:
-    """Write content to the specified cell by cell_id.
+    """Write content to the specified cell by cell_id. Supports prefix matching.
 
     Returns True on success, False if cell not found.
     """
@@ -55,13 +71,13 @@ def write_cell(notebook_path: Union[str, Path], cell_id: str, content: str) -> b
         return False
     with notebook_lock(path):
         nb = _read_nb(path)
-        for cell in nb.cells:
-            if cell.get("id") == cell_id:
-                cell["source"] = _to_source(content, cell.get("source"))
-                nbformat.write(nb, path)
-                request_notebook_refresh(path)
-                return True
-    return False
+        cell = _find_cell_by_id(nb, cell_id)
+        if cell is None:
+            return False
+        cell["source"] = _to_source(content, cell.get("source"))
+        nbformat.write(nb, path)
+        request_notebook_refresh(path)
+    return True
 
 
 def create_cell(
@@ -111,17 +127,21 @@ def delete_cell(notebook_path: Union[str, Path], cell_id: str) -> bool:
         return False
     with notebook_lock(path):
         nb = _read_nb(path)
-        for i, cell in enumerate(nb.cells):
-            if cell.get("id") == cell_id:
+        cell = _find_cell_by_id(nb, cell_id)
+        if cell is None:
+            return False
+        cell_id_resolved = cell.get("id")
+        for i, c in enumerate(nb.cells):
+            if c.get("id") == cell_id_resolved:
                 nb.cells.pop(i)
-                nbformat.write(nb, path)
-                request_notebook_refresh(path)
-                return True
-    return False
+                break
+        nbformat.write(nb, path)
+        request_notebook_refresh(path)
+    return True
 
 
 def get_cell_source(notebook_path: Union[str, Path], cell_id: str) -> Optional[str]:
-    """Get the source of a cell by cell_id. Returns None if not found."""
+    """Get the source of a cell by cell_id. Supports prefix matching."""
     path = resolve_notebook_filesystem_path(notebook_path)
     if not path.exists():
         return None
@@ -130,10 +150,10 @@ def get_cell_source(notebook_path: Union[str, Path], cell_id: str) -> Optional[s
     except Exception:
         nb = nbformat.read(path, as_version=4)
 
-    for cell in nb.cells:
-        if cell.get("id") == cell_id:
-            return _normalize_source(cell.get("source", ""))
-    return None
+    cell = _find_cell_by_id(nb, cell_id)
+    if cell is None:
+        return None
+    return _normalize_source(cell.get("source", ""))
 
 
 def _captured_to_nbformat_output(item: dict) -> dict:
@@ -180,15 +200,16 @@ def update_cell_output(
         return False
     with notebook_lock(path):
         nb = _read_nb(path)
-        for cell in nb.cells:
-            if cell.get("id") == cell_id and cell.get("cell_type") == "code":
-                nb_outputs = [_captured_to_nbformat_output(o) for o in output if o.get("msg_type")]
-                cell["outputs"] = [from_dict(o) for o in nb_outputs if o]
-                if execution_count is not None:
-                    cell["execution_count"] = execution_count
-                nbformat.write(nb, path)
-                request_notebook_refresh(path)
-                return True
+        cell = _find_cell_by_id(nb, cell_id)
+        if cell is None or cell.get("cell_type") != "code":
+            return False
+        nb_outputs = [_captured_to_nbformat_output(o) for o in output if o.get("msg_type")]
+        cell["outputs"] = [from_dict(o) for o in nb_outputs if o]
+        if execution_count is not None:
+            cell["execution_count"] = execution_count
+        nbformat.write(nb, path)
+        request_notebook_refresh(path)
+    return True
     return False
 
 
