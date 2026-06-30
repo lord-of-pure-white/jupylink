@@ -33,26 +33,70 @@ _LAST_ACTIVE_NOTEBOOK_NAME = "last_active_notebook"
 
 
 # ---------------------------------------------------------------------------
-# Simple file lock (cross-process, compatible with Py2 and Py3)
+# PID-aware file lock (cross-process, compatible with Py2 and Py3)
 # ---------------------------------------------------------------------------
+try:
+    ProcessLookupError
+except NameError:
+    ProcessLookupError = OSError  # Py2 compatibility
+
+
+def _pid_alive(pid):
+    """Check whether a process with the given PID is still running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _read_lock_pid(lock_path):
+    """Read the PID stored in a lock file. Returns None if unreadable."""
+    try:
+        with open(lock_path, "r") as fh:
+            raw = fh.read(128)
+        return int(raw.strip())
+    except (ValueError, OSError, IOError):
+        return None
+
+
 def _acquire_lock(lock_path, timeout):
     deadline = time.time() + timeout
     while True:
         try:
-            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
-            os.close(fd)
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+            try:
+                os.write(fd, str(os.getpid()).encode("ascii"))
+            finally:
+                os.close(fd)
             return
         except OSError:
+            # Lock exists — check if the holder is still alive
+            pid = _read_lock_pid(lock_path)
+            if pid is not None and pid != os.getpid() and not _pid_alive(pid):
+                logger.info(
+                    "Breaking stale lock %s (PID %d is dead)", lock_path, pid
+                )
+                try:
+                    os.unlink(lock_path)
+                except OSError:
+                    pass
+                continue  # retry immediately
             if time.time() >= deadline:
+                holder = "PID {}".format(pid) if pid else "unknown"
                 raise RuntimeError(
-                    "Failed to acquire lock on {} after {}s".format(lock_path, timeout)
+                    "Failed to acquire lock on {} after {}s (held by {})".format(
+                        lock_path, timeout, holder
+                    )
                 )
             time.sleep(0.1)
 
 
 def _release_lock(lock_path):
     try:
-        os.unlink(lock_path)
+        pid = _read_lock_pid(lock_path)
+        if pid == os.getpid():
+            os.unlink(lock_path)
     except OSError:
         pass
 

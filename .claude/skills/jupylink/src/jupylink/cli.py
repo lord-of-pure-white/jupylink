@@ -100,13 +100,24 @@ def get_output(
 @app.command(name="write-cell")
 def write_cell_cmd(
     cell_id: str = typer.Argument(..., help="Cell ID (supports prefix matching)"),
-    content: str = typer.Argument(..., help="Content to write"),
+    content: Optional[str] = typer.Argument(None, help="Content to write (omit if --file is used)"),
     notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    source_file: Optional[str] = typer.Option(None, "--file", help="Read cell content from file (avoids shell escaping issues)"),
     no_refresh: bool = typer.Option(False, "--no-refresh", help="Do not request IDE to refresh"),
 ) -> None:
-    """Write content to the specified cell."""
+    """Write content to the specified cell. Use --file to read from a file."""
     if no_refresh:
         set_refresh_disabled(True)
+    if source_file:
+        try:
+            with open(source_file, "r", encoding="utf-8") as fh:
+                content = fh.read()
+        except OSError as e:
+            typer.echo("Cannot read file: {}".format(e), err=True)
+            raise typer.Exit(1)
+    if content is None:
+        typer.echo("Must provide content or --file.", err=True)
+        raise typer.Exit(1)
     path = _require_notebook(notebook)
     if not write_cell(path, cell_id, content):
         typer.echo("Cell not found: {}".format(cell_id), err=True)
@@ -121,11 +132,19 @@ def create_cell_cmd(
     at: Optional[int] = typer.Option(None, "--at", "-a", help="Index to insert at (default: append)"),
     cell_type: str = typer.Option("code", "--type", "-t", help="Cell type: code, markdown, raw"),
     source: str = typer.Option("", "--source", "-s", help="Initial source content"),
+    source_file: Optional[str] = typer.Option(None, "--file", help="Read cell content from file (avoids shell escaping)"),
     no_refresh: bool = typer.Option(False, "--no-refresh", help="Do not request IDE to refresh"),
 ) -> None:
-    """Create a new cell in the notebook."""
+    """Create a new cell in the notebook. Use --file to read from a file."""
     if no_refresh:
         set_refresh_disabled(True)
+    if source_file:
+        try:
+            with open(source_file, "r", encoding="utf-8") as fh:
+                source = fh.read()
+        except OSError as e:
+            typer.echo("Cannot read file: {}".format(e), err=True)
+            raise typer.Exit(1)
     path = _require_notebook(notebook)
     if cell_type not in ("code", "markdown", "raw"):
         typer.echo("Invalid cell type: {}".format(cell_type), err=True)
@@ -269,10 +288,18 @@ def record(
 @app.command()
 def execute(
     cell_ids: list[str] = typer.Argument(..., help="Cell ID(s) to execute (supports prefix matching)"),
-    notebook: str = typer.Argument(_ARG_NOT_PROVIDED, help="Path to notebook (optional if default is set)"),
+    notebook: Optional[str] = typer.Option(None, "--notebook", "-n", help="Path to notebook (uses default if omitted)"),
     no_refresh: bool = typer.Option(False, "--no-refresh", help="Do not request IDE to refresh"),
+    stdout_only: bool = typer.Option(False, "--stdout", help="Print only stdout text (no JSON wrapper)"),
 ) -> None:
-    """Execute the specified cell(s). Multiple cells run in sequence, reusing the same kernel."""
+    """Execute the specified cell(s). Multiple cells run in sequence, reusing the same kernel.
+
+    Examples:
+      jupylink execute abc123               # use default notebook
+      jupylink execute abc123 def456         # multiple cells, same kernel
+      jupylink execute -n book.ipynb abc123  # explicit notebook
+      jupylink execute abc123 --stdout       # print only stdout text
+    """
     from .executor import execute_cell, execute_cells
 
     if no_refresh:
@@ -283,14 +310,31 @@ def execute(
         if result is None:
             typer.echo("Cell not found or execution failed: {}".format(cell_ids[0]), err=True)
             raise typer.Exit(1)
-        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        if stdout_only:
+            for item in (result.get("output") or []):
+                if item.get("msg_type") == "stream" and item.get("name") == "stdout":
+                    typer.echo(item.get("text", ""), nl=False)
+                elif item.get("msg_type") == "error":
+                    typer.echo("{}: {}".format(item.get("ename", ""), item.get("evalue", "")), err=True)
+            typer.echo("")  # trailing newline
+        else:
+            typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         results = execute_cells(path, cell_ids)
         if not results:
             typer.echo("No cells executed or cells not found", err=True)
             raise typer.Exit(1)
-        for r in results:
-            typer.echo(json.dumps(r, ensure_ascii=False, indent=2))
+        if stdout_only:
+            for r in results:
+                for item in (r.get("output") or []):
+                    if item.get("msg_type") == "stream" and item.get("name") == "stdout":
+                        typer.echo(item.get("text", ""), nl=False)
+                    elif item.get("msg_type") == "error":
+                        typer.echo("{}: {}".format(item.get("ename", ""), item.get("evalue", "")), err=True)
+            typer.echo("")
+        else:
+            for r in results:
+                typer.echo(json.dumps(r, ensure_ascii=False, indent=2))
 
 
 # ---------------------------------------------------------------------------

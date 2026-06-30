@@ -29,21 +29,36 @@ logger = logging.getLogger(__name__)
 _DEFAULT_EXEC_TIMEOUT = 60
 _KERNEL_READY_TIMEOUT = 5
 
+# Keep kernel managers alive so they don't get GC'd and kill the kernel.
+# Keyed by normalized notebook path.
+_active_kms: dict[str, Any] = {}
 
-def _get_exec_timeout() -> int:
+
+def _shutdown_old_kernel(path_str):
+    """Shut down and unregister the previously-cached kernel for *path_str*."""
+    old = _active_kms.pop(path_str, None)
+    if old is None:
+        return
+    try:
+        old.shutdown_kernel(now=True)
+    except Exception:
+        logger.debug("Failed to shut down old kernel for %s", path_str, exc_info=True)
+
+
+def _get_exec_timeout():
     """Read execution timeout from env, defaulting to 60s."""
     try:
-        return int(os.environ.get("JUPYLINK_EXEC_TIMEOUT", _DEFAULT_EXEC_TIMEOUT))
+        return int(os.environ.get("JUPYLINK_EXEC_TIMEOUT", str(_DEFAULT_EXEC_TIMEOUT)))
     except (ValueError, TypeError):
         return _DEFAULT_EXEC_TIMEOUT
 
 
-def _output_hook_impl(msg: dict[str, Any], captured: list[dict[str, Any]]) -> None:
+def _output_hook_impl(msg, captured):
     """Extract output from IOPub message into captured list."""
     msg_type = msg.get("header", {}).get("msg_type", "")
     content = msg.get("content", {})
     if msg_type in ("stream", "error", "execute_result", "display_data"):
-        out: dict[str, Any] = {"msg_type": msg_type}
+        out = {"msg_type": msg_type}
         if msg_type == "stream":
             out["name"] = content.get("name", "stdout")
             out["text"] = content.get("text", "")
@@ -59,9 +74,7 @@ def _output_hook_impl(msg: dict[str, Any], captured: list[dict[str, Any]]) -> No
         captured.append(out)
 
 
-def _execute_with_metadata(
-    kc: BlockingKernelClient, code: str, cell_id: str, captured: list[dict[str, Any]]
-) -> Optional[dict[str, Any]]:
+def _execute_with_metadata(kc, code, cell_id, captured):
     """Send execute_request with cellId in metadata, collect output, return reply."""
     timeout = _get_exec_timeout()
     content = {
@@ -76,7 +89,6 @@ def _execute_with_metadata(
     msg_id = msg["header"]["msg_id"]
     kc.shell_channel.send(msg)
 
-    # Poll IOPub until status=idle for our request
     deadline = time.monotonic() + timeout
     got_idle = False
     while time.monotonic() < deadline:
@@ -97,7 +109,6 @@ def _execute_with_metadata(
     if not got_idle:
         logger.warning("IOPub did not reach idle within %ds for cell %s", timeout, cell_id)
 
-    # Reserve dedicated time for the shell reply instead of using leftover deadline
     reply_timeout = min(max(5, deadline - time.monotonic()), 10)
     try:
         return kc._recv_reply(msg_id, timeout=reply_timeout)
@@ -106,16 +117,11 @@ def _execute_with_metadata(
         return None
 
 
-def _execute_with_client(
-    kc: BlockingKernelClient,
-    code: str,
-    cell_id: Optional[str] = None,
-    notebook_path: Optional[Path] = None,
-) -> Optional[dict[str, Any]]:
+def _execute_with_client(kc, code, cell_id=None, notebook_path=None):
     """Execute code with a kernel client and return result."""
-    captured: list[dict[str, Any]] = []
+    captured: list = []
 
-    def output_hook(msg: dict[str, Any]) -> None:
+    def output_hook(msg):
         _output_hook_impl(msg, captured)
 
     try:
@@ -153,11 +159,8 @@ def _execute_with_client(
     return result
 
 
-def _connect_existing_kernel(path: Path) -> Optional[BlockingKernelClient]:
-    """Try to connect to an existing JupyLink kernel for this notebook.
-
-    On connection failure, unregisters the stale entry so next execute will spawn fresh.
-    """
+def _connect_existing_kernel(path):
+    """Try to connect to an existing JupyLink kernel for this notebook."""
     cf = get_connection_file(path)
     if not cf:
         return None
@@ -173,7 +176,8 @@ def _connect_existing_kernel(path: Path) -> Optional[BlockingKernelClient]:
             kc.stop_channels()
         except Exception:
             pass
-        unregister(path)  # remove stale entry so next execute spawns fresh
+        unregister(path)
+        _active_kms.pop(str(path), None)
         return None
 
 
@@ -187,15 +191,9 @@ def _read_notebook_kernel_name(path):
 
 
 def _find_kernel_name(path):
-    """Find the best kernel name for this notebook.
-
-    1. jupylink (Py3 record-writing kernel) — always preferred
-    2. jupylink2 (Py2 record-writing kernel) — for python2 notebooks
-    3. Whatever the notebook's kernelspec says (fallback)
-    """
+    """Find the best kernel name for this notebook."""
     from jupyter_client.kernelspec import get_kernel_spec
 
-    # Always prefer jupylink if available
     try:
         get_kernel_spec("jupylink")
         return "jupylink"
@@ -203,7 +201,6 @@ def _find_kernel_name(path):
         pass
 
     nb_name = _read_notebook_kernel_name(path)
-    # If the notebook's kernel is python2, try jupylink2 first
     if nb_name and "python2" in nb_name.lower():
         try:
             get_kernel_spec("jupylink2")
@@ -216,11 +213,7 @@ def _find_kernel_name(path):
 
 
 def _spawn_kernel(path):
-    """Spawn a new kernel for this notebook. Returns (km, kc) or None.
-
-    Prefers jupylink / jupylink2 when available (so record writing works).
-    Otherwise uses the notebook's own kernelspec (e.g. python3, python2).
-    """
+    """Spawn a new kernel. Saves the kernel manager to prevent GC from killing it."""
     env = os.environ.copy()
     p = str(path)
     env["JUPYTER_NOTEBOOK_PATH"] = p
@@ -231,21 +224,25 @@ def _spawn_kernel(path):
 
     try:
         km, kc = start_new_kernel(kernel_name=kernel_name, env=env, independent=True)
+        # Keep km alive so the kernel process is not killed by GC
+        path_key = str(resolve_notebook_filesystem_path(path))
+        _shutdown_old_kernel(path_key)
+        _active_kms[path_key] = km
         return km, kc
     except Exception:
         logger.exception("Failed to spawn kernel for %s", path)
         return None
 
 
-def execute_cell(notebook_path: Union[str, Path], cell_id: str) -> Optional[dict[str, Any]]:
+def execute_cell(notebook_path, cell_id):
     """Execute a cell by cell_id and return status, output, execution_count.
 
-    First tries to connect to the existing JupyLink kernel for this notebook.
-    If none is registered, spawns a new kernel and keeps it alive for reuse.
+    Connects to the existing JupyLink kernel when available (even across
+    separate CLI invocations). Spawns a new kernel only on first use.
     """
-    cleanup_stale()  # remove entries whose connection files are gone
+    cleanup_stale()
     path = resolve_notebook_filesystem_path(notebook_path)
-    if not path.exists():
+    if not os.path.exists(str(path)):
         return None
     write_active_notebook_hint(path)
 
@@ -282,20 +279,15 @@ def execute_cell(notebook_path: Union[str, Path], cell_id: str) -> Optional[dict
             kc.stop_channels()
 
 
-def execute_cells(
-    notebook_path: Union[str, Path], cell_ids: list[str]
-) -> list[dict[str, Any]]:
-    """Execute multiple cells in sequence, reusing the same kernel.
-
-    Returns a list of results (one per cell). Use this when cells depend on each other.
-    """
-    cleanup_stale()  # remove entries whose connection files are gone
+def execute_cells(notebook_path, cell_ids):
+    """Execute multiple cells in sequence, sharing the same kernel."""
+    cleanup_stale()
     path = resolve_notebook_filesystem_path(notebook_path)
-    if not path.exists():
+    if not os.path.exists(str(path)):
         return []
     write_active_notebook_hint(path)
 
-    codes: list[tuple[str, str]] = []
+    codes = []
     for cid in cell_ids:
         code = get_cell_source(path, cid)
         if code is None:
@@ -303,8 +295,8 @@ def execute_cells(
             return []
         codes.append((cid, code))
 
-    def _run_with_client(kc: BlockingKernelClient) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
+    def _run(kc):
+        results = []
         for cid, code in codes:
             r = _execute_with_client(kc, code, cell_id=cid, notebook_path=path)
             if r is None:
@@ -316,7 +308,7 @@ def execute_cells(
     kc = _connect_existing_kernel(path)
     if kc:
         try:
-            return _run_with_client(kc)
+            return _run(kc)
         finally:
             kc.stop_channels()
 
@@ -324,7 +316,7 @@ def execute_cells(
         kc = _connect_existing_kernel(path)
         if kc:
             try:
-                return _run_with_client(kc)
+                return _run(kc)
             finally:
                 kc.stop_channels()
 
@@ -336,6 +328,6 @@ def execute_cells(
         if cf:
             register(path, cf)
         try:
-            return _run_with_client(kc)
+            return _run(kc)
         finally:
             kc.stop_channels()
